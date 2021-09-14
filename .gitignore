@@ -1,0 +1,7 @@
+.vscode/
+backup/
+build/
+
+*.txt
+!CMakeLists.txt
+*.code-workspace
