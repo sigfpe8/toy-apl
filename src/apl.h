@@ -18,15 +18,16 @@
  * The workspace contains no pointers, only offsets
  */
 
-#define APL_SMALL_MM
+#define APL_LARGE_MM
 
 // Small memory model
-#if	defined(APL_SMALL_MM)		// 16-bit offsets, 64KB WS, 6 dimensions
+#if	defined(APL_SMALL_MM)		// 16-bit offsets, 64 KB WS, 6 dimensions
 typedef uint16_t	offset;
 typedef	uint8_t		apltype;
 typedef	uint8_t		aplrank;
 typedef	uint16_t	aplshape;
-#define	MAXWKSSZ	(64*1024)		// 64 KB
+#define	MAXWKSSZ	64				// Max WS size: 64 KB
+#define	DEFWKSSZ	64				// Default WS size: 64 KB
 #define	BASDIM		2				// # of dims in first part of DESC
 #define	MAXDIM		6				// Max # of dimensions
 #define	MAXIND		65535			// Highest array index
@@ -38,7 +39,8 @@ typedef uint32_t	offset;
 typedef	uint16_t	apltype;
 typedef	uint16_t	aplrank;
 typedef	uint32_t	aplshape;
-#define	MAXWKSSZ	(2048*1024*1024)// 2 GB
+#define	MAXWKSSZ	(2048*1024)		// Max WS size: 2 GB
+#define	DEFWKSSZ	1024			// Default WS size: 1 MB
 #define	BASDIM		2				// # of dims in first part of DESC
 #define	MAXDIM		14				// Max # of dimensions
 #define	MAXIND		INT32_MAX		// Highest array index
@@ -50,7 +52,8 @@ typedef uint64_t	offset;
 typedef	uint16_t	apltype;
 typedef	uint16_t	aplrank;
 typedef	uint32_t	aplshape;
-#define	MAXWKSSZ	(17179869184LL)	// 16 GB
+#define	MAXWKSSZ	(16384*1024)	// Max WS size: 16 GB
+#define	DEFWKSSZ	(512*1024)		// Default WS size: 512 MB
 #define	BASDIM		5				// # of dims in first part of DESC
 #define	MAXDIM		13				// Max # of dimensions
 #define	MAXIND		INT32_MAX		// Highest array index
@@ -306,7 +309,6 @@ typedef struct {
 #ifdef	APL_SMALL_MM
 	char	pad[sizeof(double)-2*sizeof(offset)];	// Make sure data[] is aligned for doubles
 #endif
-	char 	data[2];	/* The data */
 } HEAPCELL;
 
 #define	HEAPMINBLOCK	128

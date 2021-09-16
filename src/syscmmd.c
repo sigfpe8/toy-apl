@@ -36,7 +36,7 @@ Command acmCmdTab[] =
 	{ "fns",		Fns,		"Show defined functions"				},
 	{ "heap",		Heap,		"Heap statistics"						},
 	{ "load",		Load,		"Load source/workspace"					},
-	{ "mem",		Memory,		"Show memory usage"						},
+	{ "mem",		Memory,		"Show memory usage [K|M]"				},
 	{ "off",		Off,		"Exit APL"								},
 	{ "origin",		Origin,		"Set/get the system origin (0/1)"		},
 	{ "save",		Save,		"Save source/workspace"					},
@@ -312,14 +312,21 @@ int Load(int argc, char *argv[])
 
 int Memory(int argc, char *argv[])
 {
-	int tsize = 0;
-	int tused = 0;
-	int tfree = 0;
-	int size, used, free;
+	size_t tsize = 0;
+	size_t tused = 0;
+	size_t tfree = 0;
+	size_t size, used, free;
+	size_t scale = 1;
+
+	if (argc == 2) {
+		if (*argv[1] == 'k' || *argv[1] == 'K') scale = 1024;
+		else if (*argv[1] == 'M' || *argv[1] == 'M') scale = 1024 * 1024;
+	}
 
 	printf("Region            Size        Used        Free\n");
 	printf("-----------   ---------   ---------   ---------\n");
 
+#if	0
 	// Workspace header
 	size = (int)pwksBase->hdrsz;
 	used = size;
@@ -327,6 +334,7 @@ int Memory(int argc, char *argv[])
 	tsize += size;
 	tused += used;
 	printf("WS header    %10d  %10d  %10d\n", size, used, free);
+#endif
 
 	// REPL input and parse buffer
 	size = REPLBUFSIZ;
@@ -334,16 +342,17 @@ int Memory(int argc, char *argv[])
 	free = 0;
 	tsize += size;
 	tused += used;
-	printf("REPL buffer  %10d  %10d  %10d\n", size, used, free);
+	printf("REPL buffer  %10d  %10d  %10d\n", (int)(size/scale), (int)(used/scale), (int)(free/scale));
 
 	// Global name table
-	size = (int)pwksBase->namsz;
+//	size = (int)pwksBase->namsz;
+	size = namsz;
 	used = (char *)pnamTop - (char *)pnamBase;
 	free = (char *)phepBase - (char *)pnamTop;
 	tsize += size;
 	tused += used;
 	tfree += free;
-	printf("Name table   %10d  %10d  %10d\n", size, used, free);
+	printf("Name table   %10d  %10d  %10d\n", (int)(size/scale), (int)(used/scale), (int)(free/scale));
 
 	// Global heap and operand stack grow toward each other
 	size = (int)hepoprsz;
@@ -352,13 +361,13 @@ int Memory(int argc, char *argv[])
 	tsize += size;
 	tused += used;
 	tfree += free;
-	printf("Heap         %10d  %10d  %10d\n", size, used, free);
+	printf("Heap         %10d  %10d  %10d\n", (int)(size/scale), (int)(used/scale), (int)(free/scale));
 
 	// Global heap and operand stack grow toward each other
 	// Same size and free space
 	used = (char *)(poprBase+1) - (char *)poprTop;
 	tused += used;
-	printf("Oper stack   %10d  %10d  %10d\n", size, used, free);
+	printf("Oper stack   %10d  %10d  %10d\n", (int)(size/scale), (int)(used/scale), (int)(free/scale));
 
 	// Global descriptor table and temp array stack grow toward each other
 	size = (int)gblarrsz;
@@ -367,16 +376,16 @@ int Memory(int argc, char *argv[])
 	tsize += size;
 	tused += used;
 	tfree += free;
-	printf("Global desc  %10d  %10d  %10d\n", size, used, free);
+	printf("Global desc  %10d  %10d  %10d\n", (int)(size/scale), (int)(used/scale), (int)(free/scale));
 
 	// Global descriptor table and temp array stack grow toward each other
 	// Same size and free space
 	used = (char *)parrBase - (char *)parrTop;
 	tused += used;
-	printf("Array stack  %10d  %10d  %10d\n", size, used, free);
+	printf("Array stack  %10d  %10d  %10d\n", (int)(size/scale), (int)(used/scale), (int)(free/scale));
 
 	printf("              ---------   ---------   ---------\n");
-	printf("Total        %10d  %10d  %10d\n", tsize, tused, tfree);
+	printf("Total        %10d  %10d  %10d\n", (int)(tsize/scale), (int)(tused/scale), (int)(tfree/scale));
 
 	return OK;
 }
@@ -393,11 +402,9 @@ int Origin(int argc, char *argv[])
 
 	if (argc == 1)
 		print_line("System ORIGIN is %d.\n", g_origin);
-	else if (argc == 2)
-	{
+	else if (argc == 2) {
 		newOrigin = atoi(argv[1]);
-		if (newOrigin != 0 && newOrigin != 1)
-		{
+		if (newOrigin != 0 && newOrigin != 1) {
 			print_line(" Invalid ORIGIN.\n");
 			return ERROR;
 		}

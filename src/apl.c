@@ -62,20 +62,28 @@ static void REPL(LEXER *plex);
 int main(int argc, char *argv[])
 {
 	LEXER lex;
+	size_t rest;
 
-	/*
-	   For now these sizes are fixed. Later they'll be
-	   configurable via startup options.
-	*/
-	namsz    =  2 * 1024;
-	hepoprsz = 38 * 1024;
-	gblarrsz = 23 * 1024;
+	// At this point, all sizes in KB
+	wkssz = DEFWKSSZ;
+	rest = wkssz - (REPLBUFSIZ/1024);
 
-	wkssz = namsz + hepoprsz + gblarrsz + REPLBUFSIZ;
-	if (wkssz > MAXWKSSZ) {
-		print_line("Workspace too big\n");
-		exit(1);
-	}
+	if (wkssz <= 64)
+		namsz = 2;
+	else if (wkssz <= 1024)
+		namsz = 8;
+	else
+		namsz = 16;
+
+	rest -= namsz;
+	hepoprsz = rest / 3;
+	gblarrsz = wkssz - (REPLBUFSIZ/1024) - namsz - hepoprsz;
+
+	// Convert KB sizes to Bytes
+	wkssz *= 1024;
+	namsz *= 1024;
+	hepoprsz *= 1024;
+	gblarrsz *= 1024;
 
 	if (sizeof(DESC) != DESCSZ) {
 		print_line("sizeof(DESC)=%d, expected %d\n", (int)sizeof(DESC), DESCSZ);
@@ -97,7 +105,7 @@ int main(int argc, char *argv[])
 	CreateLexer(&lex, (char *)pgblBase + gblarrsz, REPLBUFSIZ, 0, 0);
 	INITJUMP();
 
-	print_line("\nToy APL Version %d.%d.%d\n", APL_VER_MAJOR, APL_VER_MINOR, APL_VER_PATCH);
+	print_line("\nToyAPL Version %d.%d.%d\n", APL_VER_MAJOR, APL_VER_MINOR, APL_VER_PATCH);
 	print_line("Released under the MIT License; see LICENSE\n\n");
 
 	if (argc == 1)

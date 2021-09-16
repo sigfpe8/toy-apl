@@ -5129,7 +5129,7 @@ offset AplHeapAlloc(int size, offset off)
 
 	// The 'length' of a heap cell includes the header and
 	// the data and it's always a multiple of sizeof(double).
-	size += sizeof(HEAPCELL) - 2;
+	size += sizeof(HEAPCELL);
 	size = ALIGN(size, sizeof(double));
 
 	// See if there's a block in the free list
@@ -5167,7 +5167,7 @@ offset AplHeapAlloc(int size, offset off)
 
 	pc->follow = off;
 
-	return WKSOFF(pc->data);
+	return WKSOFF((char *)pc + sizeof(HEAPCELL));
 }
 
 void AplHeapFree(offset off)
@@ -5177,7 +5177,7 @@ void AplHeapFree(offset off)
 	HEAPCELL *pc;
 	offset of;
 
-	pf = (HEAPCELL *)WKSPTR(off - sizeof(HEAPCELL) + 2);
+	pf = (HEAPCELL *)WKSPTR(off - sizeof(HEAPCELL));
 	pf->follow = 0;
 
 	// If we're freeing the top block, simply adjust phepTop
