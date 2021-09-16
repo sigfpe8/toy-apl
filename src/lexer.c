@@ -181,7 +181,7 @@ void NextTok(LEXER *plex)
 		TokNumber(plex);
 	else if (chr =='\'')
 		TokString(plex);
-	else if (isalpha(chr))
+	else if (isalpha(chr) || chr == CHAR_DELTA || chr == '_')
 		TokName(plex);
 	else {
 		plex->tokTyp = token_from_char(chr);
@@ -538,7 +538,7 @@ static void TokName(LEXER *plex)
 {
 	while (1) {
 		NextChr(plex);
-		if (!isalnum(plex->lexChr) && plex->lexChr != APL_DELTA)
+		if (!isalnum(plex->lexChr) && plex->lexChr != CHAR_DELTA && plex->lexChr != '_')
 			break;
 	}
 

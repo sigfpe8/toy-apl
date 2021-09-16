@@ -45,7 +45,8 @@ typedef struct {
 #define	LDEL	32
 
 // Special characters
-#define	CHAR_HIGHMINUS	0xAF
+#define	CHAR_HIGHMINUS	0x00AF
+#define	CHAR_DELTA		0x2206
 
 #define	IsMonadic(tk)	(AplTokens[tk].flags & MONADIC)
 #define	IsDyadic(tk)	(AplTokens[tk].flags & DYADIC)

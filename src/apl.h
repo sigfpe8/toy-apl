@@ -318,6 +318,8 @@ extern HEAPCELL	hepFree;
 // Operand stack
 extern DESC   *poprBase;
 extern DESC   *poprTop;
+#define	NUM_VALS(e)			((e)->pvarBase - poprTop)
+#define	VALIDATE_ARGS(e,n)	if (NUM_VALS(e) < (n)) EvlError(EE_NO_VALUE)
 
 // Global descriptors
 extern size_t  gblarrsz;	// Size of globals descriptors + array stack
@@ -439,21 +441,15 @@ typedef struct {
 	double		*plitBase;	// Base of literals table
 	offset		*plinBase;	// Base of line offsets table
 	DESC		*pvarBase;	// Base of local variable descriptors
+	uint32_t	flags;		// Execution flags
 } ENV;
 
-// Editing keys
-#define	CHAR_UP		128
-#define	CHAR_DOWN	129
-#define	CHAR_LEFT	130
-#define	CHAR_RIGHT	131
-#define	CHAR_INS	132
-#define	CHAR_DEL	133
-#define	CHAR_HOME	134
-#define	CHAR_END	135
-#define	CHAR_PG_UP	136
-#define	CHAR_PG_DN	137
-#define	CHAR_BS		8
-#define	CHAR_CR		13
+// Normally all the expressions in a diamond-separated list are evaluated,
+// printed and dropped. FunExecute() sets this flag instructing EvlExprList()
+// to keep the last value on the stack so that it can be used outside the
+// execute.
+#define	EX_KEEP_LAST	1	// Keep last value of ExprList on the stack
+#define	KEEP_LAST(e)	((e)->flags & EX_KEEP_LAST)
 
 // Printing formats for numbers
 #define	FMT_INT		1		// Generic, no exp (3, ¯25, 1.345)
@@ -558,8 +554,5 @@ extern jmp_buf jbStack[];
 extern int jbSP;
 
 #define DEL_SYMBOL	"∇"
-// define DEL_SYMBOL	"{DEL}"
 
-#endif	/* _APL_H */
-
-/* EOF */
+#endif	// _APL_H

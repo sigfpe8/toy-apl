@@ -29,7 +29,7 @@ static void		EvlGetIndex(int n);
 static int		EvlIndex(ENV *penv);
 static void		EvlInnerProd(int funL, int funR);
 static void		EvlSetIndex(int n);
-static void		EvlMonadicFun(int fun, int axis, int axis_type);
+static void		EvlMonadicFun(ENV *penv, int fun, int axis, int axis_type);
 static void		EvlOuterProd(int fun);
 static void		ExtendArray(ARRAYINFO *pai, int axis);
 static void		ExtendScalar(ARRAYINFO *psrc, ARRAYINFO *pdst, int axis);
@@ -39,7 +39,7 @@ static void		FunDeal(void);
 static void		FunDecode(void);
 static void		FunDrop(void);
 static void		FunEncode(void);
-static void		FunExecute(void);
+static void		FunExecute(ENV *penv);
 static void		FunExpand(int axis);
 static void		FunFormat(void);
 static void		FunFormat2(void);
@@ -61,6 +61,7 @@ static int		NumElem(DESC *pv);
 static void		OperPush(int type, int rank);
 static void		OperPushDesc(DESC *pd);
 static void		OperSwap(void);
+static void		QuadInp(ENV *penv);
 static void		QuoteQuadInp(void);
 static void		Reduce(int fun, int dim);
 static void		Scan(int fun, int dim);
@@ -107,7 +108,8 @@ void InitEnvFromLexer(ENV *penv, LEXER *plex)
 	penv->pCode = plex->pCode + 1;
 	penv->plitBase = plex->plitBase;
 	penv->plinBase = plex->plinBase;
-	penv->pvarBase = 0;
+	penv->pvarBase = poprBase + 1;	// Used by NUM_VALS()
+	penv->flags = 0;
 }
 
 void InitEnvFromFunction(ENV *penv, FUNCTION *pfun)
@@ -117,39 +119,32 @@ void InitEnvFromFunction(ENV *penv, FUNCTION *pfun)
 	penv->plitBase = POINTER(pfun, pfun->nHdrSiz);
 	penv->plinBase = (offset *)(penv->plitBase + pfun->nLits);
 	penv->pvarBase = 0;		// Set in EvlFunction()
+	penv->flags = 0;
 }
 
-void EvlPrint(ENV *penv)
-{
-	// Print values of expressions
-	if (g_print_expr) {
-		DESC *pd = poprTop;
-		int count = 0;
-		while (pd <= poprBase) {
-			if (RANK(pd) > 1)
-				print_line("\n");
-			DescPrint(pd);
-			if (RANK(pd) > 1)
-				print_line("\n");
-			POP(pd);
-			++count;
-		}
-
-		if (count)
-			print_line("\n");
-	}
-	poprTop = poprBase + 1;
-}
-
+// Called to evaluate a line from:
+//   1. a REPL input
+//   2. a function being executed
+//   3. an execute (⍎) string
+//   4. a ⎕ input string (via execute)
+//   5. a file being loaded
 void EvlExprList(ENV *penv)
 {
 	// Evaluate list of diamond-separated expressions
+	// expr1 ⋄ expr2 ⋄ ... ⋄ exprn
 	do {
 		EvlExpr(penv);
-		EvlPrint(penv);
+		// Print and drop the value of all expressions.
+		// Keep the last one if KEEP_LAST flag is set.
+		if ((NUM_VALS(penv) > 0) && *penv->pCode != APL_RIGHT_ARROW &&
+			(*penv->pCode == APL_DIAMOND || !KEEP_LAST(penv))) {
+			DescPrint(poprTop);		// Print top value
+			print_line("\n");
+			POP(poprTop);			// Drop it
+		}
 	} while (*penv->pCode++ == APL_DIAMOND);
 
-	--penv->pCode;
+	--penv->pCode;	// Point back to token that ended the expression
 }
 
 // Reset evaluation stacks
@@ -210,8 +205,7 @@ void EvlExpr(ENV *penv)
 			++penv->pCode;	// Skip ←
 
 			// Must have a value
-			if (poprTop > poprBase)
-				EvlError(EE_NO_VALUE);
+			VALIDATE_ARGS(penv,1);
 
 			// Indexed assignment?
 			if (*penv->pCode == APL_RIGHT_BRACKET)
@@ -232,8 +226,7 @@ void EvlExpr(ENV *penv)
 			case APL_QUAD:
 				if (dims)
 					EvlError(EE_SYNTAX_ERROR);
-				DescPrint(poprTop);
-				print_line("\n");
+				DescPrintln(poprTop);
 				++penv->pCode;
 				break;
 			case APL_QUOTE_QUAD:
@@ -246,7 +239,9 @@ void EvlExpr(ENV *penv)
 				EvlError(EE_BAD_FUNCTION);
 			}
 			dims = 0;
-			if (*penv->pCode == APL_END || *penv->pCode == APL_NL || *penv->pCode == APL_DIAMOND)
+			if (*penv->pCode == APL_DIAMOND)
+				POP(poprTop);
+			else if ((*penv->pCode == APL_END || *penv->pCode == APL_NL) && !KEEP_LAST(penv))
 				POP(poprTop);
 		} else if ((fun == APL_SLASH || fun == APL_SLASH_BAR) && IsDyadic(nxt)) {
 			VALIDATE_AXIS(poprTop,APL_SLASH);
@@ -259,26 +254,30 @@ void EvlExpr(ENV *penv)
 		} else if (IsDyadic(fun) && IsAtom(nxt)) {
 			++penv->pCode;
 			EvlAtom(penv);
+			VALIDATE_ARGS(penv,2);
 			EvlDyadicFun(fun, axis, axis_type);
 		} else if (IsDyadic(fun) && nxt == APL_DOT && IsAtom(*(penv->pCode + 3))) {
 			if (*(penv->pCode + 2) == APL_JOT ) {		// Outer product: A ∘. fun B
 				penv->pCode += 3;
 				EvlAtom(penv);
+				VALIDATE_ARGS(penv,2);
 				EvlOuterProd(fun);
 			} else if (IsDyadic(*(penv->pCode + 2))) {	// Inner product:  A fun2 . fun B
 				int fun2 = *(penv->pCode + 2);
 				penv->pCode += 3;
 				EvlAtom(penv);
+				VALIDATE_ARGS(penv,2);
 				EvlInnerProd(fun2, fun);
 			} else
 				EvlError(EE_SYNTAX_ERROR);
 		} else if (IsMonadic(fun)) {
+			VALIDATE_ARGS(penv,1);
 			++penv->pCode;
 			if (fun == APL_SYSFUN1) {		// ⎕fun
 				fun = *penv->pCode++;
 				FunSystem1(fun);
 			} else
-				EvlMonadicFun(fun, axis, axis_type);
+				EvlMonadicFun(penv, fun, axis, axis_type);
 		} else if (fun == APL_VARNAM) {
 			// User-defined function?
 			++penv->pCode;
@@ -286,7 +285,10 @@ void EvlExpr(ENV *penv)
 			if (pfun->nArgs == 2 && IsAtom(*penv->pCode)) {
 				// Dyadic user function
 				EvlAtom(penv);
-			} else if (pfun->nArgs != 1)
+				VALIDATE_ARGS(penv,2);
+			} else if (pfun->nArgs == 1) {
+				VALIDATE_ARGS(penv,1);
+			} else
 				EvlError(EE_BAD_FUNCTION);
 			EvlFunction(pfun);
 		} else
@@ -345,6 +347,10 @@ static void EvlAtom(ENV *penv)
 		if (*penv->pCode != APL_LEFT_PAREN)
 			EvlError(EE_UNMATCHED_PAR);
 		++penv->pCode;
+		break;
+
+	case APL_QUAD:
+		QuadInp(penv);
 		break;
 
 	case APL_QUOTE_QUAD:
@@ -1147,6 +1153,51 @@ static void EvlDyadicNumFun(int fun)
 	}
 }
 
+static void EvlDyadicMixFun(fun)
+{
+	double *pnew;
+	int nelem;
+	int rank;
+
+	// Mixed types. Only = and ≠ are possible and will return all 0's
+	if (fun != APL_EQUAL && fun != APL_NOT_EQUAL)
+		EvlError(EE_DOMAIN);
+
+	POP(poprTop);
+
+	switch (CMP_TYPES(poprTop-1, poprTop)) {
+	case CMP_SCALAR_SCALAR:
+		nelem = 1;
+		break;
+	case CMP_SCALAR_ARRAY:
+		nelem = NumElem(poprTop);
+		break;
+	case CMP_ARRAY_SCALAR:
+		rank = RANK(poprTop-1);
+		nelem = NumElem(poprTop-1);
+		// Copy shape and rank to result
+		RANK(poprTop) = rank;
+		for (int i = 0; i < rank; ++i)
+			SHAPE(poprTop)[i] = SHAPE(poprTop-1)[i];
+		break;
+	case CMP_ARRAY_ARRAY:
+		if (!Conformable(poprTop-1,poprTop))
+			EvlError(EE_NOT_CONFORMABLE);
+		nelem = NumElem(poprTop);
+		break;
+	}
+
+	if (nelem == 1) {	// Result is a scalar
+		pnew = &poprTop->uval.xdbl;
+	} else {			// Result is an array
+		pnew = TempAlloc(sizeof(double), nelem);
+		VOFF(poprTop) = WKSOFF(pnew);
+	}
+	TYPE(poprTop) = TNUM;
+	// All zeros
+	memset(pnew, 0, nelem * sizeof(double));
+}
+
 static void EvlDyadicFun(int fun, int axis, int axis_type)
 {
 	int typL, typR;
@@ -1234,10 +1285,10 @@ static void EvlDyadicFun(int fun, int axis, int axis_type)
 		return;
 	}
 
-	EvlError(EE_DOMAIN);
+	EvlDyadicMixFun(fun);
 }
 
-static void EvlMonadicFun(int fun, int axis, int axis_type)
+static void EvlMonadicFun(ENV *penv, int fun, int axis, int axis_type)
 {
 	double *pold, *pnew;
 	double num;
@@ -1278,7 +1329,7 @@ static void EvlMonadicFun(int fun, int axis, int axis_type)
 		FunFormat();
 		return;
 	case APL_HYDRANT:		// ⍎V
-		FunExecute();
+		FunExecute(penv);
 		return;
 	}
 
@@ -3006,11 +3057,10 @@ static void FunEncode()
 	}
 }
 
-static void	FunExecute(void)
+static void	FunExecute(ENV *penv)
 {
 	LEXER lex;
 	ENV env;
-	int save_print_expr = g_print_expr;
 
 	if (TYPE(poprTop) != TCHR)
 		EvlError(EE_DOMAIN);
@@ -3018,35 +3068,26 @@ static void	FunExecute(void)
 	if (RANK(poprTop) != 1)
 		EvlError(EE_RANK);
 
-	// The source comes directly from the vector string
 	int len = SHAPE(poprTop)[0];
-	char *srcbuf  = (char *)VPTR(poprTop);
+	char *src  = (char *)VPTR(poprTop);
 	POP(poprTop);
-	lex.psrcBase  = srcbuf;
-	lex.pexprBase = srcbuf;
-	lex.pChr      = srcbuf;
-	lex.psrcEnd   = srcbuf + len;
-	lex.nlines    = 0;
-	lex.pnameBase = 0;
-	lex.fInQuotes = 0;
-	// The object is in a temp buffer
-	int buflen = max(128, len * 8);	// Tentative
-	char *objbuf = (char *)TempAlloc(8, buflen/8);
-	lex.buflen = buflen;
-	lex.pobjBase = objbuf + buflen - 1;
-	lex.plinBase = (offset *)objbuf;
-	InitLexerAux(&lex);
+
+	int buflen = max(len * 8, 128);
+	char *buffer = (char *)TempAlloc(sizeof(char), buflen);
+	memcpy(buffer, src, len);
+	buffer[len] = 0;
+
+	CreateLexer(&lex, buffer, buflen, 0, 0);
+	InitLexer(&lex, len+1);
 
 	if (!TokExpr(&lex))
 		return;
 
 	InitEnvFromLexer(&env,&lex);
+	env.pvarBase = poprTop;
+	env.flags |= EX_KEEP_LAST;
 	//TokPrint(env.pCode, env.plitBase);
-	g_print_expr = 0;
 	EvlExprList(&env);
-	g_print_expr = save_print_expr;
-	// Don't reset stacks
-	// This could be in the middle of an expression
 }
 
 static void FunDrop()
@@ -4513,24 +4554,16 @@ static void EvlFunction(FUNCTION *pfun)
 
 		// Execute that line
 		poprTop = env.pvarBase;
-		EvlExpr(&env);
+		EvlExprList(&env);
 
 		// Where do we go now?
 		if (*env.pCode == APL_NL) {	// Next line?
-			// Print expression value?
-			if (poprTop < env.pvarBase)
-			{
-				DescPrint(poprTop);
-				print_line("\n");
-			}
 			++line;	// Proceed to the next line
 		} else if (*env.pCode == APL_RIGHT_ARROW) { // Branch to other line
 			// Must have a value
-			if (poprTop == env.pvarBase)
-				EvlError(EE_SYNTAX_ERROR);
+			VALIDATE_ARGS(&env,1);
 			line = EvlBranchLine(line);
-		}
-		else
+		} else
 			EvlError(EE_SYNTAX_ERROR);
 	} while (0 < line && line <= pfun->nLines);
 
@@ -4631,16 +4664,12 @@ static void VarSetNam(ENV *penv, int dims)
 			TYPE(pd) = TNUM;
 			RANK(pd) = 0;
 			VNUM(pd) = VNUM(poprTop);
-			if (*penv->pCode == APL_END)
-				POP(poprTop);
 		} else if (TYPE(poprTop) == TCHR) {
 			if (ISARRAY(pd))
 				AplHeapFree(VOFF(pd));
 			TYPE(pd) = TCHR;
 			RANK(pd) = 0;
 			VCHR(pd) = VCHR(poprTop);
-			if (*penv->pCode == APL_END)
-				POP(poprTop);
 		}
 		return;
 	}
@@ -4766,6 +4795,9 @@ void DescPrint(DESC *popr)
 	double num;
 	double *pdbl;
 
+	if (RANK(poprTop) > 1)	// Give more room to higher dimensional arrays
+		print_line("\n");
+
 	switch (TYPE(popr)) {
 	case TNUM:
 		FormatOut();
@@ -4799,6 +4831,9 @@ void DescPrint(DESC *popr)
 		}
 		break;	
 	}
+
+	if (RANK(poprTop) > 1)	// Give more room to higher dimensional arrays
+		print_line("\n");
 }
 
 static void QuoteQuadInp(void)
@@ -4827,6 +4862,14 @@ static void QuoteQuadInp(void)
 	pnew = TempAlloc(sizeof(char), len);
 	VOFF(poprTop) = WKSOFF(pnew);
 	memcpy(pnew, ioBuf, len);
+}
+
+static void QuadInp(ENV *penv)
+{
+	print_line("⎕:\n");
+	print_line(g_blanks);
+	QuoteQuadInp();
+	FunExecute(penv);
 }
 
 static void SysIdent(void)
