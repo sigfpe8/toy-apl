@@ -47,7 +47,7 @@ typedef	uint32_t	aplshape;
 #define	DESCSZ		64				// sizeof(DESC)
 
 // Huge memory model
-#elif defined(APL_HUGE_MM)		// 64-bit offsets, 16GB WS, 13 dimensions
+#elif defined(APL_HUGE_MM)		// 64-bit offsets, 16 GB WS, 13 dimensions
 typedef uint64_t	offset;
 typedef	uint16_t	apltype;
 typedef	uint16_t	aplrank;

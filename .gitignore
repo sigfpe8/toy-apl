@@ -1,6 +1,7 @@
 .vscode/
 backup/
 build/
+data/
 
 *.txt
 !CMakeLists.txt

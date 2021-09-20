@@ -1,6 +1,6 @@
-## Welcome to ToyAPL!
+## Welcome to toyAPL (WIP)!
 
-ToyAPL implements the basic features of APL\360 and a few things from APL.SV (the format and execute functions).
+ToyAPL implements the basic features of APL\360 and a few things from APL.SV (the format and execute functions). This is still work in progress.
 
 ## Platforms
 
@@ -19,6 +19,8 @@ All terminal input/output is done using UTF-8. This is made easier on macOS by u
 ## Future work
 
 * Use of 16-bit UTF-16 Unicode characters for strings
+* Better handling of floating-point comparison and division
+* Implement internal integer datatype (currently only FP)
 * Nested arrays
 * D-fns
 * A C++ rewrite

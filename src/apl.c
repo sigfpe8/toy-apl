@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
 	CreateLexer(&lex, (char *)pgblBase + gblarrsz, REPLBUFSIZ, 0, 0);
 	INITJUMP();
 
-	print_line("\nToyAPL Version %d.%d.%d\n", APL_VER_MAJOR, APL_VER_MINOR, APL_VER_PATCH);
+	print_line("toyAPL Version %d.%d.%d\n", APL_VER_MAJOR, APL_VER_MINOR, APL_VER_PATCH);
 	print_line("Released under the MIT License; see LICENSE\n\n");
 
 	if (argc == 1)
@@ -165,7 +165,7 @@ void InitWorkspace(int first_time)
 
 	// Default WS name (only the first time)
 	if (first_time)
-		strcpy(pwksBase->wsid, "Toy APL WS");
+		strcpy(pwksBase->wsid, "toyAPL WS");
 }
 
 static void REPL(LEXER *plex)
