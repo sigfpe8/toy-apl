@@ -95,6 +95,8 @@ ALTCHAR AplAltChars[] = {
 	{ 0x23a2,	APL_STILE		},	// |
 	{ 0x223c,	APL_TILDE		},	// ~
 	{ 0x005e,	APL_AND			},	// ^
+	{ 0x2208,	APL_EPSILON		},	// ∈
+	{ 0x2212,	APL_MINUS		},	// −
 };
 
 int	num_altchars = sizeof(AplAltChars) / sizeof(AplAltChars[0]);
