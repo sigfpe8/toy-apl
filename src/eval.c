@@ -3029,31 +3029,44 @@ static void FunEncode()
 	ArrayInfo(&L);
 	POP(poprTop);
 	ArrayInfo(&R);
+	if (RANK(poprTop) == 0)
+		R.rank = 0;
 
 	if (L.type != TNUM || R.type != TNUM)
 		EvlError(EE_DOMAIN);
 
-	if (L.rank != 1 || R.nelem != 1)
+	if (L.rank != 1)
 		EvlError(EE_RANK);
 
 	int digits = L.nelem;
-	double num = *(double *)R.vptr;
+	int stride = R.nelem;
+	int nelem = L.nelem * R.nelem;
 	double *pL = (double *)L.vptr;
-	double *pdst = TempAlloc(sizeof(double), L.nelem);
+	double *pR = (double *)R.vptr;
+	double *pD = TempAlloc(sizeof(double), nelem);
 
-	// Prepare result (a vector)
-	RANK(poprTop) = 1;
+	// Prepare result
+	// Shape of result = (⍴L),⍴R
+	RANK(poprTop) = R.rank + 1;
+	for (int i = R.rank; i > 0; --i)
+		SHAPE(poprTop)[i] = R.shape[i - 1];
 	SHAPE(poprTop)[0] = digits;
-	VOFF(poprTop) = WKSOFF(pdst);
+	VOFF(poprTop) = WKSOFF(pD);
 
-	// Work right to left
-	pL += digits;
-	pdst += digits;
-	for (int i = 0; i < digits; ++i) {
-		double div = *--pL;
-		double rem = fmod(num, div);
-		*--pdst = rem;
-		num = (num - rem) / div;
+	// Work from right to left
+	pD += nelem;
+	pR += R.nelem;
+	for (int i = 0; i < R.nelem; ++i) {
+		pL = (double *)L.vptr + digits;
+		double num = *--pR;
+		double *pdst = --pD;
+		for (int j = 0; j < digits; ++j) {
+			double div = *--pL;
+			double rem = fmod(num, div);
+			*pdst = rem;
+			pdst -= stride;
+			num = (num - rem) / div;
+		}
 	}
 }
 
