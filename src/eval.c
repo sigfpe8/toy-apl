@@ -4145,8 +4145,7 @@ static void VarGetSys(ENV *penv)
 	case SYS_A:		// Alphabet
 		OperPush(TCHR,1);
 		SHAPE(poprTop)[0] = len = 26;
-		pchr = TempAlloc(sizeof(char), len);
-		VOFF(poprTop) = WKSOFF(pchr);
+		pchr = CharAlloc(poprTop, len);
 		for (int i = 0; i < len; ++i)
 			*pchr++ = 'A' + i;
 		break;
@@ -4157,8 +4156,7 @@ static void VarGetSys(ENV *penv)
 	case SYS_D:		// Digits
 		OperPush(TCHR,1);
 		SHAPE(poprTop)[0] = len = 10;
-		pchr = TempAlloc(sizeof(char), len);
-		VOFF(poprTop) = WKSOFF(pchr);
+		pchr = CharAlloc(poprTop, len);
 		for (int i = 0; i < len; ++i)
 			*pchr++ = '0' + i;
 		break;
@@ -4186,8 +4184,7 @@ static void VarGetSys(ENV *penv)
 	case SYS_VER:	// Version
 		OperPush(TNUM,1);
 		SHAPE(poprTop)[0] = 3;
-		pdbl = TempAlloc(sizeof(double), 3);
-		VOFF(poprTop) = WKSOFF(pdbl);
+		pdbl = DoubleAlloc(poprTop, 3);
 		pdbl[0] = APL_VER_MAJOR;
 		pdbl[1] = APL_VER_MINOR;
 		pdbl[2] = APL_VER_PATCH;
@@ -4196,8 +4193,7 @@ static void VarGetSys(ENV *penv)
 		OperPush(TCHR,1);
 		len = strlen(pwksBase->wsid);
 		SHAPE(poprTop)[0] = len;
-		pchr = TempAlloc(sizeof(char), len);
-		VOFF(poprTop) = WKSOFF(pchr);
+		pchr = CharAlloc(poprTop, len);
 		memcpy(pchr, pwksBase->wsid, len);
 		break;
 	}
