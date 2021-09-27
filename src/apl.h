@@ -11,8 +11,8 @@
 
 // Version
 #define	APL_VER_MAJOR	0
-#define	APL_VER_MINOR	5
-#define	APL_VER_PATCH	1
+#define	APL_VER_MINOR	6
+#define	APL_VER_PATCH	0
 /*
  * The workspace contains no pointers, only offsets
  */
