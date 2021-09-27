@@ -15,9 +15,15 @@
 #include "error.h"
 #include "token.h"
 
+
+char   *CharAlloc(DESC *pd, size_t nelem);
+double *DoubleAlloc(DESC *pd, size_t nelem);
+
 static void		ArrayInfo(ARRAYINFO *pai);
+static int *	AsInt(DESC *pd, int nelem);
 static double	Binomial(double x, double y);
 static int		Conformable(DESC *pv1, DESC *pv2);
+static int 		DyadicConformable(ARRAYINFO *p1, ARRAYINFO *p2, DESC *pr);
 static void		EvlAtom(ENV *penv);
 static int		EvlBranchLine(int old);
 static double	EvlCircularFun(int fun, double arg);
@@ -386,20 +392,20 @@ static int EvlIndex(ENV *penv)
 
 static void EvlGetIndex(int n)
 {
+	ARRAYINFO A;
 	INDEX	indices[MAXDIM];
 	aplshape	shape[MAXDIM];		// Shape of result array
 	int		d, i, j, ind, len, m, r, t;
 	DESC	*popr;
-	void	*parr;
 	INDEX	*p;
 
-	// X[I]
+	// A[I]
 
-	// Stack has: top -> X
+	// Stack has: top -> A
 	//                   I (n)
 	if (!ISARRAY(poprTop))
 		EvlError(EE_DOMAIN);
-	// Rank of X must be equal to the number of indices (n)
+	// Rank of A must be equal to the number of indices (n)
 	if (RANK(poprTop) != n)
 		EvlError(EE_NOT_CONFORMABLE);
 
@@ -432,7 +438,7 @@ static void EvlGetIndex(int n)
 	// Create index iterator and get first index
 	ind = CreateIndex(indices, n);
 
-	parr = VPTR(poprTop);
+	ArrayInfo(&A);
 	t = TYPE(poprTop);
 
 	// Result is a single element (rank = 0)
@@ -440,7 +446,7 @@ static void EvlGetIndex(int n)
 		if (t == TNUM) {
 			double *pold;
 			// 1 real number
-			pold  = parr;
+			pold = A.vptr;
 			poprTop += n;
 			TYPE(poprTop) = TNUM;
 			RANK(poprTop) = 0;
@@ -449,7 +455,7 @@ static void EvlGetIndex(int n)
 		} else {	// TCHR
 			char *pold;
 			// 1 character
-			pold  = parr;
+			pold = A.vptr;
 			poprTop += n;
 			TYPE(poprTop) = TCHR;
 			RANK(poprTop) = 0;
@@ -469,13 +475,13 @@ static void EvlGetIndex(int n)
 	poprTop += n;
 	TYPE(poprTop) = t;
 	RANK(poprTop) = r;
-	memcpy(SHAPE(poprTop), shape, r * sizeof(aplshape));
+	COPY_SHAPE(SHAPE(poprTop), shape, r);
 
 	// Copy indexed elements to new array
 	if (t == TNUM) {
 		double *pold, *pnew;
 
-		pold  = parr;
+		pold = A.vptr;
 		pnew = TempAlloc(sizeof(double), m);
 		VOFF(poprTop) = WKSOFF(pnew);
 		do {
@@ -485,7 +491,7 @@ static void EvlGetIndex(int n)
 	} else {	// TCHR
 		char *pold, *pnew;
 
-		pold  = parr;
+		pold = A.vptr;
 		pnew = TempAlloc(sizeof(char), m);
 		VOFF(poprTop) = WKSOFF(pnew);
 		do {
@@ -559,11 +565,10 @@ static void EvlSetIndex(int n)
 			if (SHAPE(poprTop)[i] != shape[i])
 				EvlError(EE_NOT_CONFORMABLE);
 		step = 1;
-		pval = VPTR(poprTop);	
-	} else {
+	} else
 		step = 0;
-		pval = (void *)&poprTop->uval;
-	}
+
+	pval = VPTR(poprTop);
 
 	// Copy indexed elements to array
 	if (t == TNUM) {
@@ -633,9 +638,10 @@ int CreateIndex(INDEX *pi, int n)
 				p->index = (int)VNUM(popr) - g_origin;
 				p->type = TINT;
 				break;
-			} else {				// Array of indices  M[2 3;4 5]		
-				p->beg = p->ptr = VPTR(popr);
-				p->end = p->beg + NumElem(popr);
+			} else {				// Array of indices  M[2 3;4 5]
+				int nelem = NumElem(popr);
+				p->beg = p->ptr = AsInt(popr, nelem);
+				p->end = p->beg + nelem;
 				p->index = *p->ptr - g_origin;
 				p->type = TNUM;
 			}
@@ -1017,73 +1023,41 @@ static double EvlCircularFun(int fun, double arg)
 
 static void EvlDyadicStrFun(int fun)
 {
-	char *pchrL, *pchrR;
+	ARRAYINFO L;
+	ARRAYINFO R;
+	char *psrcL, *psrcR;
 	double *pnew;
 	int stepL, stepR;
 	int nelem;
-	int rank;
 
+	ArrayInfo(&L);
 	POP(poprTop);
+	ArrayInfo(&R);
 
-	switch (CMP_TYPES(poprTop-1, poprTop)) {
-	case CMP_SCALAR_SCALAR:
-		pchrL = &(poprTop-1)->uval.xchr[0];
-		stepL = 0;
-		pchrR = &(poprTop)->uval.xchr[0];
-		stepR = 0;
-		nelem = 1;
-		break;
-	case CMP_SCALAR_ARRAY:
-		pchrL = &(poprTop-1)->uval.xchr[0];
-		stepL = 0;
-		pchrR = VPTR(poprTop);
-		stepR = 1;
-		nelem = NumElem(poprTop);
-		break;
-	case CMP_ARRAY_SCALAR:
-		pchrL = VPTR(poprTop-1);
-		stepL = 1;
-		pchrR = &(poprTop)->uval.xchr[0];
-		stepR = 0;
-		rank = RANK(poprTop-1);
-		nelem = NumElem(poprTop-1);
-		// Copy shape and rank to result
-		RANK(poprTop) = rank;
-		for (int i = 0; i < rank; ++i)
-			SHAPE(poprTop)[i] = SHAPE(poprTop-1)[i];
-		break;
-	case CMP_ARRAY_ARRAY:
-		if (!Conformable(poprTop-1,poprTop))
-			EvlError(EE_NOT_CONFORMABLE);
-		pchrL = VPTR(poprTop-1);
-		stepL = 1;
-		pchrR = VPTR(poprTop);
-		stepR = 1;
-		nelem = NumElem(poprTop);
-		break;
-	}
+	nelem = DyadicConformable(&L, &R, poprTop);
 
-	if (nelem == 1) {	// Result is a scalar
-		pnew = &poprTop->uval.xdbl;
-	} else {			// Result is an array
-		pnew = TempAlloc(sizeof(double), nelem);
-		VOFF(poprTop) = WKSOFF(pnew);
-	}
+	psrcL = L.vptr;
+	stepL = L.step;
+	psrcR = R.vptr;
+	stepR = R.step;
+
+	pnew = DoubleAlloc(poprTop, nelem);
+
 	TYPE(poprTop) = TNUM;
 
 	switch (fun) {
 	case APL_EQUAL:
 		while (nelem--) {
-			*pnew++ = *pchrL == *pchrR;
-			pchrL += stepL;
-			pchrR += stepR;
+			*pnew++ = *psrcL == *psrcR;
+			psrcL += stepL;
+			psrcR += stepR;
 		}
 		break;
 	case APL_NOT_EQUAL:
 		while (nelem--) {
-			*pnew++ = *pchrL != *pchrR;
-			pchrL += stepL;
-			pchrR += stepR;
+			*pnew++ = *psrcL != *psrcR;
+			psrcL += stepL;
+			psrcR += stepR;
 		}
 		break;
 	}
@@ -1091,108 +1065,51 @@ static void EvlDyadicStrFun(int fun)
 
 static void EvlDyadicNumFun(int fun)
 {
-	double *pnumL, *pnumR;
+	ARRAYINFO L;
+	ARRAYINFO R;
+	double *psrcL, *psrcR;
 	double *pnew;
 	int stepL, stepR;
 	int nelem;
-	int rank;
 
+	ArrayInfo(&L);
 	POP(poprTop);
+	ArrayInfo(&R);
 
-	switch (CMP_TYPES(poprTop-1, poprTop)) {
-	case CMP_SCALAR_SCALAR:
-		pnumL = &(poprTop-1)->uval.xdbl;
-		stepL = 0;
-		pnumR = &(poprTop)->uval.xdbl;
-		stepR = 0;
-		nelem = 1;
-		break;
-	case CMP_SCALAR_ARRAY:
-		pnumL = &(poprTop-1)->uval.xdbl;
-		stepL = 0;
-		pnumR = VPTR(poprTop);
-		stepR = 1;
-		nelem = NumElem(poprTop);
-		break;
-	case CMP_ARRAY_SCALAR:
-		pnumL = VPTR(poprTop-1);
-		stepL = 1;
-		pnumR = &(poprTop)->uval.xdbl;
-		stepR = 0;
-		rank = RANK(poprTop-1);
-		nelem = NumElem(poprTop-1);
-		// Copy shape and rank to result
-		RANK(poprTop) = rank;
-		for (int i = 0; i < rank; ++i)
-			SHAPE(poprTop)[i] = SHAPE(poprTop-1)[i];
-		break;
-	case CMP_ARRAY_ARRAY:
-		if (!Conformable(poprTop-1,poprTop))
-			EvlError(EE_NOT_CONFORMABLE);
-		pnumL = VPTR(poprTop-1);
-		stepL = 1;
-		pnumR = VPTR(poprTop);
-		stepR = 1;
-		nelem = NumElem(poprTop);
-		break;
-	}
+	nelem = DyadicConformable(&L, &R, poprTop);
 
-	if (nelem == 1) {	// Result is a scalar
-		pnew = &poprTop->uval.xdbl;
-		RANK(poprTop) = 0;
-	} else {			// Result is an array
-		pnew = TempAlloc(sizeof(double), nelem);
-		VOFF(poprTop) = WKSOFF(pnew);
-	}
+	psrcL = L.vptr;
+	stepL = L.step;
+	psrcR = R.vptr;
+	stepR = R.step;
+
+	pnew = DoubleAlloc(poprTop, nelem);
 	TYPE(poprTop) = TNUM;
 
 	while (nelem--) {
-		*pnew++ = EvlDyadicScalarNumFun(fun, *pnumL, *pnumR);
-		pnumL += stepL;
-		pnumR += stepR;
+		*pnew++ = EvlDyadicScalarNumFun(fun, *psrcL, *psrcR);
+		psrcL += stepL;
+		psrcR += stepR;
 	}
 }
 
 static void EvlDyadicMixFun(fun)
 {
+	ARRAYINFO L;
+	ARRAYINFO R;
 	double *pnew;
 	int nelem;
-	int rank;
 
 	// Mixed types. Only = and ≠ are possible and will return all 0's
 	if (fun != APL_EQUAL && fun != APL_NOT_EQUAL)
 		EvlError(EE_DOMAIN);
 
+	ArrayInfo(&L);
 	POP(poprTop);
+	ArrayInfo(&R);
 
-	switch (CMP_TYPES(poprTop-1, poprTop)) {
-	case CMP_SCALAR_SCALAR:
-		nelem = 1;
-		break;
-	case CMP_SCALAR_ARRAY:
-		nelem = NumElem(poprTop);
-		break;
-	case CMP_ARRAY_SCALAR:
-		rank = RANK(poprTop-1);
-		nelem = NumElem(poprTop-1);
-		// Copy shape and rank to result
-		RANK(poprTop) = rank;
-		for (int i = 0; i < rank; ++i)
-			SHAPE(poprTop)[i] = SHAPE(poprTop-1)[i];
-		break;
-	case CMP_ARRAY_ARRAY:
-		if (!Conformable(poprTop-1,poprTop))
-			EvlError(EE_NOT_CONFORMABLE);
-		nelem = NumElem(poprTop);
-		break;
-	}
-
-	if (nelem == 1) {	// Result is a scalar
-		pnew = &poprTop->uval.xdbl;
-	} else {			// Result is an array
-		pnew = TempAlloc(sizeof(double), nelem);
-		VOFF(poprTop) = WKSOFF(pnew);
-	}
+	nelem = DyadicConformable(&L, &R, poprTop);
+	pnew = DoubleAlloc(poprTop, nelem);
 	TYPE(poprTop) = TNUM;
 	// All zeros
 	memset(pnew, 0, nelem * sizeof(double));
@@ -1529,7 +1446,6 @@ static void EvlNumInnerProd(int funL, int funR, ARRAYINFO *L, ARRAYINFO *R)
 {
 	double *psrL = (double *)L->vptr;
 	double *psrR = (double *)R->vptr;
-	double *pdst;
 	int axis = L->rank - 1;
 	int ni = L->nelem / L->shape[axis];	// All but last  L axis
 	int nj = R->nelem / R->shape[0];	// All but first R axis
@@ -1537,14 +1453,7 @@ static void EvlNumInnerProd(int funL, int funR, ARRAYINFO *L, ARRAYINFO *R)
 	int R_stride = R->stride[0];
 
 	TYPE(poprTop) = TNUM;
-	if (ISSCALAR(poprTop)) {			// Result is a scalar
-		assert(nelem == 1);
-		pdst = &poprTop->uval.xdbl;
-	} else {							// Result is an array
-		assert(nelem > 1);
-		pdst = TempAlloc(sizeof(double), nelem);
-		VOFF(poprTop) = WKSOFF(pdst);
-	}
+	double *pdst = DoubleAlloc(poprTop, nelem);
 
 	for (int i = 0; i < ni; ++i) {
 		for (int j = 0; j < nj; ++j) {
@@ -1586,14 +1495,7 @@ static void EvlStrInnerProd(int funL, int funR, ARRAYINFO *L, ARRAYINFO *R)
 		EvlError(EE_DOMAIN);
 
 	TYPE(poprTop) = TNUM;
-	if (ISSCALAR(poprTop)) {			// Result is a scalar
-		assert(nelem == 1);
-		pdst = &poprTop->uval.xdbl;
-	} else {							// Result is an array
-		assert(nelem > 1);
-		pdst = TempAlloc(sizeof(double), nelem);
-		VOFF(poprTop) = WKSOFF(pdst);
-	}
+	pdst = DoubleAlloc(poprTop, nelem);
 
 	for (int i = 0; i < ni; ++i) {
 		for (int j = 0; j < nj; ++j) {
@@ -1679,21 +1581,13 @@ static void EvlInnerProd(int funL, int funR)
 	// Common case: L +.× R
 	double *psrL = (double *)L.vptr;
 	double *psrR = (double *)R.vptr;
-	double *pdst;
 	int ni = L.nelem / L.shape[axis];	// All but last  L axis
 	int nj = R.nelem / R.shape[0];		// All but first R axis
 	int nelem = ni * nj;				// # of elements of result
 	int R_stride = R.stride[0];
 
 	TYPE(poprTop) = TNUM;
-	if (ISSCALAR(poprTop)) {			// Result is a scalar
-		assert(nelem == 1);
-		pdst = &poprTop->uval.xdbl;
-	} else {							// Result is an array
-		assert(nelem > 1);
-		pdst = TempAlloc(sizeof(double), nelem);
-		VOFF(poprTop) = WKSOFF(pdst);
-	}
+	double *pdst = DoubleAlloc(poprTop, nelem);
 
 	for (int i = 0; i < ni; ++i) {
 		for (int j = 0; j < nj; ++j) {
@@ -1791,26 +1685,20 @@ static void EvlOuterProd(int fun)
 static void FunShape(void)
 {
 	double *pnew;
+	aplshape shape[MAXDIM];
 	int rank;
 
-	if (ISSCALAR(poprTop)) {
-		// Null vector
-		TYPE(poprTop) = TNUM;
-		RANK(poprTop) = 1;
-		SHAPE(poprTop)[0] = 0;
-		return;
-	}
-
 	rank = RANK(poprTop);
-	pnew = TempAlloc(sizeof(double), rank);
-	VOFF(poprTop) = WKSOFF(pnew);
+	COPY_SHAPE(shape, SHAPE(poprTop), rank);
+
 	TYPE(poprTop) = TNUM;
 	RANK(poprTop) = 1;
+	SHAPE(poprTop)[0] = rank;
+
+	pnew = DoubleAlloc(poprTop, rank);
 
 	for (int i = 0; i < rank; ++i)
-		*pnew++ = SHAPE(poprTop)[i];
-
-	SHAPE(poprTop)[0] = rank;
+		*pnew++ = shape[i];
 }
 
 static void FunSystem1(int fun)
@@ -1827,103 +1715,77 @@ static void FunSystem1(int fun)
 
 static void FunReshape(void)
 {
-	aplshape	shape[MAXDIM];	/* Desired shape */
-	int nElemN, nElemO;		/* Number of elements, new and old */
-	int rankN;				/* New rank */
+	ARRAYINFO A;
+	aplshape shape[MAXDIM];	// Desired shape
+	int nelem;
+	int rank;				// New rank
 	int i, j;
-	int nNum;
+	int num;
 	double *pdbl;
 
 	// V ⍴ A
 
-	// Left argument must be a numeric vector
+	// Left argument must be numeric
 	if (TYPE(poprTop) != TNUM)
 		EvlError(EE_DOMAIN);
 
-	// A number is treated as a vector of one element
-	if (ISSCALAR(poprTop)) {
-		rankN = 1;
-		shape[0] = nElemN = (int)VNUM(poprTop);
-	} else {
-		if (RANK(poprTop) != 1)
-			EvlError(EE_RANK);
-		rankN = NumElem(poprTop);
-		if (rankN > MAXDIM)
+	if (RANK(poprTop) > 1)
+		EvlError(EE_RANK);
+	rank = NumElem(poprTop);
+	if (rank > MAXDIM)
+		EvlError(EE_DOMAIN);
+	pdbl = VPTR(poprTop);
+	nelem = 1;
+	for (i = 0; i < rank; ++i) {
+		if ((num = (int)*pdbl++) < 0 || num > MAXIND)
 			EvlError(EE_DOMAIN);
-		pdbl = VPTR(poprTop);
-		nElemN = 1;
-		for (i = 0; i < rankN; ++i) {
-			if ((nNum = (int)*pdbl++) < 0 || nNum > MAXIND)
-				EvlError(EE_DOMAIN);
-			shape[i] = (char)nNum;
-			nElemN *= nNum;
-		}
+		shape[i] = num;
+		nelem *= num;
 	}
 
 	POP(poprTop);
-
 	// Right argument
-	if (ISSCALAR(poprTop)) {	// Right argument is a scalar
-		if (TYPE(poprTop) == TNUM) {
-			double num = VNUM(poprTop);
-			double *pnew = TempAlloc(sizeof(double), nElemN);
-			VOFF(poprTop) = WKSOFF(pnew);
-			for (i = 1; i <= nElemN; ++i)
-				*pnew++ = num;
-		} else if (TYPE(poprTop) == TCHR) {
-			int chr = VCHR(poprTop);
-			char *pnew = TempAlloc(sizeof(char), nElemN);
-			VOFF(poprTop) = WKSOFF(pnew);
-			for (i = 1; i <= nElemN; ++i)
-				*pnew++ = chr;
-		}
-	} else {					// Right argument is an array
-		if (TYPE(poprTop) == TNUM) {
-			double *pnew, *pold;
-			double prot = 0.0;
-			nElemO = NumElem(poprTop);
-			pold = nElemO ? VPTR(poprTop) : &prot;
-			if (nElemN > nElemO) {
-				pnew = TempAlloc(sizeof(double), nElemN);
-				pdbl = pold;
-				VOFF(poprTop) = WKSOFF(pnew);
-				for (i = 1, j = 0; i <= nElemN; ++i) {
-					*pnew++ = *pdbl++;
-					if (++j >= nElemO) {
-						pdbl = pold;
-						j = 0;
-					}
+	ArrayInfo(&A);
+
+	COPY_SHAPE(SHAPE(poprTop), shape, rank);
+	RANK(poprTop) = rank;
+
+	if (TYPE(poprTop) == TNUM) {
+		if (nelem > A.nelem || (rank > A.rank && ISINTSTO(poprTop))) {
+			double proto = 0.0;
+			double *pold = A.nelem ? A.vptr : &proto;
+			double *pnew = DoubleAlloc(poprTop, nelem);
+			pdbl = pold;
+			for (i = 0, j = 0; i < nelem; ++i) {
+				*pnew++ = *pdbl++;
+				if (++j >= A.nelem) {
+					pdbl = pold;
+					j = 0;
 				}
 			}
-		} else if (TYPE(poprTop) == TCHR) {
-			char *pchr, *pnew, *pold;
-			char prot = ' ';
-			nElemO = NumElem(poprTop);
-			pold = nElemO ? VPTR(poprTop) : &prot;
-			if (nElemN > nElemO) {
-				pnew = TempAlloc(sizeof(char), nElemN);
-				pchr = pold;
-				VOFF(poprTop) = WKSOFF(pnew);
-				for (i = 1, j = 0; i <= nElemN; ++i) {
-					*pnew++ = *pchr++;
-					if (++j >= nElemO) {
-						pchr = pold;
-						j = 0;
-					}
+		}
+	} else if (TYPE(poprTop) == TCHR) {
+		if (nelem > A.nelem || (rank > A.rank && ISINTSTO(poprTop))) {
+			char proto = ' ';
+			char *pold = A.nelem ? A.vptr : &proto;
+			char *pnew = CharAlloc(poprTop, nelem);
+			char *pchr = pold;
+			for (i = 0, j = 0; i < nelem; ++i) {
+				*pnew++ = *pchr++;
+				if (++j >= A.nelem) {
+					pchr = pold;
+					j = 0;
 				}
 			}
 		}
 	}
-
-	memcpy(SHAPE(poprTop), shape, rankN * sizeof(aplshape));
-	RANK(poprTop) = rankN;
 }
 
 static void FunReverse(int axis)
 {
 	aplshape	shape[MAXDIM];	// Shape of the argument
 	int size[MAXDIM];	// Sizes of axes of the argument
-	int super[MAXDIM];	// Number of super-arrays for each axis
+	int outer[MAXDIM];	// Number of super-arrays for each axis
 	int rank;			// Rank of the argument
 	int	is_num;			// 1 if argument is numeric, 0 if character
 	int nelem;
@@ -1950,9 +1812,9 @@ static void FunReverse(int axis)
 	if (!nelem)
 		return;
 
-	// Fill in super[]
+	// Fill in outer[]
 	for (int i = 0, siz = 1; i < rank; ++i) {
-		super[i] = siz;
+		outer[i] = siz;
 		siz *= shape[i];
 	}
 
@@ -1967,7 +1829,7 @@ static void FunReverse(int axis)
 		VOFF(poprTop) = WKSOFF(pdst);
 
 		if (axis == rank - 1) {	// Special case: last axis
-			for (int i = 0; i < super[axis]; ++i) {
+			for (int i = 0; i < outer[axis]; ++i) {
 				psrc += shape[axis];	// Last element + 1 in this axis
 				for (int j = 0; j < shape[axis]; ++j)
 					*pdst++ = *--psrc;
@@ -1975,7 +1837,7 @@ static void FunReverse(int axis)
 			}
 		} else {				// Generic case
 			int copylen = size[axis] * sizeof(double);
-			for (int i = 0; i < super[axis]; ++i) {
+			for (int i = 0; i < outer[axis]; ++i) {
 				psrc += shape[axis] * size[axis]; // Last element + 1 in this axis
 				for (int j = 0; j < shape[axis]; ++j) {
 					psrc -= size[axis];
@@ -1994,7 +1856,7 @@ static void FunReverse(int axis)
 		VOFF(poprTop) = WKSOFF(pdst);
 
 		if (axis == rank - 1) {	// Special case: last axis
-			for (int i = 0; i < super[axis]; ++i) {
+			for (int i = 0; i < outer[axis]; ++i) {
 				psrc += shape[axis];	// Last element + 1 in this axis
 				for (int j = 0; j < shape[axis]; ++j)
 					*pdst++ = *--psrc;
@@ -2002,7 +1864,7 @@ static void FunReverse(int axis)
 			}
 		} else {				// Generic case
 			int copylen = size[axis] * sizeof(char);
-			for (int i = 0; i < super[axis]; ++i) {
+			for (int i = 0; i < outer[axis]; ++i) {
 				psrc += shape[axis] * size[axis]; // Last element + 1 in this axis
 				for (int j = 0; j < shape[axis]; ++j) {
 					psrc -= size[axis];
@@ -2222,16 +2084,24 @@ static void FunCatenate(int axis, int axis_type)
 	POP(poprTop);
 	ArrayInfo(&R);
 
+	// Promote 2 scalars to 2 arrays
+	if (ISSCALAR(&L) && ISSCALAR(&R)) {
+		L.rank = R.rank = 1;
+		L.shape[0] = R.shape[0] = 1;
+	}
+
 	if (L.type != R.type)	// Sorry, no boxed arrays (yet)...
 		EvlError(EE_DOMAIN);// Cannot mix numbers and characters
 
 	// To be conformable for catenation both arrays must have the same
 	// rank and their shapes can differ only in the catenation axis.
-	if (L.rank - R.rank == 1) {				// Left > Right
-		ExtendArray(&R, axis);
-		cpyshp = 1;	// Copy left shape to result
-	} else if (R.rank - L.rank == 1) {		// Right > Left
-		ExtendArray(&L, axis);
+	if (ISARRAY(&L) && ISARRAY(&R)) {
+		if (L.rank - R.rank == 1) {				// Left > Right
+			ExtendArray(&R, axis);
+			cpyshp = 1;	// Copy left shape to result
+		} else if (R.rank - L.rank == 1) {		// Right > Left
+			ExtendArray(&L, axis);
+		}
 	}
 
 	if (L.rank == R.rank) {					// Left == Right
@@ -2245,12 +2115,12 @@ static void FunCatenate(int axis, int axis_type)
 			if (axis_type == AXIS_LAMINATE)
 				SHAPE(poprTop)[i] = L.shape[i];
 		}
-	} else if (L.rank == 1 && L.nelem == 1) {
-		// Extend scalar to array
+	} else if (ISSCALAR(&L)) {
+		// Extend left scalar to array
 		ExtendScalar(&R, &L, axis);
 		scalar = 1;
-	} else if (R.rank == 1 && R.nelem == 1) {
-		// Extend scalar to array
+	} else if (ISSCALAR(&R)) {
+		// Extend right scalar to array
 		ExtendScalar(&L, &R, axis);
 		scalar = 1;
 		cpyshp = 1;
@@ -2259,10 +2129,9 @@ static void FunCatenate(int axis, int axis_type)
 
 	// Set result
 	assert(L.rank == R.rank);
-	RANK(poprTop) = max(L.rank,R.rank);
+	RANK(poprTop) = L.rank;
 	if (cpyshp) {
-		for (int i = 0; i < L.rank; ++i)
-			SHAPE(poprTop)[i] = L.shape[i];
+		COPY_SHAPE(SHAPE(poprTop), L.shape, L.rank);
 		RANK(poprTop) = L.rank;
 	}
 	SHAPE(poprTop)[axis] = L.shape[axis] + R.shape[axis];
@@ -2270,15 +2139,14 @@ static void FunCatenate(int axis, int axis_type)
 	if (L.type == TNUM) {	// Numbers
 		double *psrL = (double *)L.vptr;
 		double *psrR = (double *)R.vptr;
-		double *pdst = TempAlloc(sizeof(double), L.nelem + R.nelem);
-		VOFF(poprTop) = WKSOFF(pdst);
+		double *pdst = DoubleAlloc(poprTop, L.nelem + R.nelem);
 
 		if (!axis && !scalar) {						// Special case: first axis
 			// Copy whole left + right
 			memcpy(pdst, psrL, L.nelem * sizeof(double));
 			memcpy(pdst + L.nelem, psrR, R.nelem * sizeof(double));
 		} else if (axis == L.rank - 1 && !scalar) {// Special case: last axis
-			for (int i = 0; i < L.super[axis]; ++i) {
+			for (int i = 0; i < L.outer[axis]; ++i) {
 				// Alternate rows from left and right
 				memcpy(pdst, psrL, L.shape[axis] * sizeof(double));
 				pdst += L.shape[axis];
@@ -2292,7 +2160,7 @@ static void FunCatenate(int axis, int axis_type)
 			int R_stride = R.stride[axis];
 			int L_inner  = L.shape[axis] * L_stride;
 			int R_inner  = R.shape[axis] * R_stride;
-			for (int i = 0; i < L.super[axis]; ++i) {
+			for (int i = 0; i < L.outer[axis]; ++i) {
 				// Copy left "column"
 				for (int j = 0; j < L.size[axis]; ++j) {
 					double *pL = psrL;
@@ -2326,15 +2194,14 @@ static void FunCatenate(int axis, int axis_type)
 	} else {		// Characters
 		char *psrL = L.vptr;
 		char *psrR = R.vptr;
-		char *pdst = TempAlloc(sizeof(char), L.nelem + R.nelem);
-		VOFF(poprTop) = WKSOFF(pdst);
+		char *pdst = CharAlloc(poprTop, L.nelem + R.nelem);
 
 		if (!axis && !scalar) {						// Special case: first axis
 			// Copy whole left + right
 			memcpy(pdst, psrL, L.nelem * sizeof(char));
 			memcpy(pdst + L.nelem, psrR, R.nelem * sizeof(char));
 		} else if (axis == L.rank - 1 && !scalar) {// Special case: last axis
-			for (int i = 0; i < L.super[axis]; ++i) {
+			for (int i = 0; i < L.outer[axis]; ++i) {
 				// Alternate rows from left and right
 				memcpy(pdst, psrL, L.shape[axis] * sizeof(char));
 				pdst += L.shape[axis];
@@ -2348,7 +2215,7 @@ static void FunCatenate(int axis, int axis_type)
 			int R_stride = R.stride[axis];
 			int L_inner  = L.shape[axis] * L_stride;
 			int R_inner  = R.shape[axis] * R_stride;
-			for (int i = 0; i < L.super[axis]; ++i) {
+			for (int i = 0; i < L.outer[axis]; ++i) {
 				// Copy left "column"
 				for (int j = 0; j < L.size[axis]; ++j) {
 					char *pL = psrL;
@@ -2387,7 +2254,7 @@ static void FunCompress(int axis)
 	int	*mask;			// Copy of the left argument
 	int	shape[MAXDIM];	// Shape of the right argument
 	int size[MAXDIM];	// Sizes of axes of the right argument
-	int super[MAXDIM];	// Number of super-arrays for each axis
+	int outer[MAXDIM];	// Number of super-arrays for each axis
 	int masklen;		// # of elements in the left argument (mask)
 	int shape_axis;		// # of elements in the compressed axis
 	int nelem_dst;		// # of elements in result
@@ -2412,22 +2279,15 @@ static void FunCompress(int axis)
 			EvlError(EE_RANK);
 
 		masklen = NumElem(poprTop);
-		mask = TempAlloc(sizeof(int), masklen);
-		double *pdbl = VPTR(poprTop);
+		mask = AsInt(poprTop, masklen);
 
 		shape_axis = 0;
 		for (int i = 0; i < masklen; ++i) {
-			n = (int)*pdbl;
-			if ((double)n != *pdbl)		// Must be an integer
-				EvlError(EE_DOMAIN);
-			mask[i] = n;
-			shape_axis += abs(n);
-			++pdbl;
+			shape_axis += abs(mask[i]);
 		}
 	} else {
 		lhs_is_scalar = 1;	// Expand it later
-		mask = TempAlloc(sizeof(int), 1);
-		mask[0] = (int)VNUM(poprTop);
+		mask = AsInt(poprTop, 1);
 	}
 
 	POP(poprTop);
@@ -2457,9 +2317,9 @@ static void FunCompress(int axis)
 			size[i] = siz;
 			siz *= n;
 		}
-		// Fill in super[]
+		// Fill in outer[]
 		for (int i = 0, siz = 1; i < rank; ++i) {
-			super[i] = siz;
+			outer[i] = siz;
 			siz *= shape[i];
 		}
 		if (masklen != shape[axis])
@@ -2471,7 +2331,7 @@ static void FunCompress(int axis)
 		axis = 0;
 		rank = 1;
 		size[0] = 1;
-		super[0] = 1;
+		outer[0] = 1;
 
 		if (lhs_is_scalar) {
 			shape[0] = 1;
@@ -2507,7 +2367,7 @@ static void FunCompress(int axis)
 			VOFF(poprTop) = WKSOFF(pdst);
 
 			if (axis == rank - 1) {	// Special case: last axis
-				for (int i = 0; i < super[axis]; ++i) {
+				for (int i = 0; i < outer[axis]; ++i) {
 					for (int j = 0; j < shape[axis]; ++j) {
 						n = mask[j];
 						if (n < 0) { n = -n; elem = 0; }
@@ -2519,7 +2379,7 @@ static void FunCompress(int axis)
 				}
 			} else {				// Generic case
 				int copylen = size[axis] * sizeof(double);
-				for (int i = 0; i < super[axis]; ++i) {
+				for (int i = 0; i < outer[axis]; ++i) {
 					for (int j = 0; j < shape[axis]; ++j) {
 						n = mask[j];
 						if (n > 0) {
@@ -2545,7 +2405,7 @@ static void FunCompress(int axis)
 			VOFF(poprTop) = WKSOFF(pdst);
 
 			if (axis == rank - 1) {	// Special case: last axis
-				for (int i = 0; i < super[axis]; ++i) {
+				for (int i = 0; i < outer[axis]; ++i) {
 					for (int j = 0; j < shape[axis]; ++j) {
 						n = mask[j];
 						if (n < 0) { n = -n; elem = ' '; }
@@ -2557,7 +2417,7 @@ static void FunCompress(int axis)
 				}
 			} else {				// Generic case
 				int copylen = size[axis] * sizeof(char);
-				for (int i = 0; i < super[axis]; ++i) {
+				for (int i = 0; i < outer[axis]; ++i) {
 					for (int j = 0; j < shape[axis]; ++j) {
 						n = mask[j];
 						if (n > 0) {
@@ -2583,7 +2443,7 @@ static void FunExpand(int axis)
 	int	*mask;			// Copy of the left argument
 	int	shape[MAXDIM];	// Shape of the right argument
 	int size[MAXDIM];	// Sizes of axes of the right argument
-	int super[MAXDIM];	// Number of super-arrays for each axis
+	int outer[MAXDIM];	// Number of super-arrays for each axis
 	int masklen;		// # of elements in the left argument (mask)
 	int shape_axis;		// # of elements in the expanded axis
 	int nelem_dst;		// # of elements in result
@@ -2659,9 +2519,9 @@ static void FunExpand(int axis)
 			size[i] = siz;
 			siz *= n;
 		}
-		// Fill in super[]
+		// Fill in outer[]
 		for (int i = 0, siz = 1; i < rank; ++i) {
-			super[i] = siz;
+			outer[i] = siz;
 			siz *= shape[i];
 		}
 
@@ -2680,7 +2540,7 @@ static void FunExpand(int axis)
 		axis = 0;
 		rank = 1;
 		size[0] = 1;
-		super[0] = 1;
+		outer[0] = 1;
 		shape[0] = 1;
 
 		if (!lhs_is_scalar) {
@@ -2717,7 +2577,7 @@ static void FunExpand(int axis)
 			VOFF(poprTop) = WKSOFF(pdst);
 
 			if (axis == rank - 1) {	// Special case: last axis
-				for (int i = 0; i < super[axis]; ++i) {
+				for (int i = 0; i < outer[axis]; ++i) {
 					for (int j = 0; j < masklen; ++j) {
 						n = mask[j];
 						if (n < 0) { n = -n; elem = 0; }
@@ -2728,7 +2588,7 @@ static void FunExpand(int axis)
 				}
 			} else {				// Generic case
 				int copylen = size[axis] * sizeof(double);
-				for (int i = 0; i < super[axis]; ++i) {
+				for (int i = 0; i < outer[axis]; ++i) {
 					for (int j = 0; j < masklen; ++j) {
 						n = mask[j];
 						if (n > 0) {
@@ -2754,7 +2614,7 @@ static void FunExpand(int axis)
 			VOFF(poprTop) = WKSOFF(pdst);
 
 			if (axis == rank - 1) {	// Special case: last axis
-				for (int i = 0; i < super[axis]; ++i) {
+				for (int i = 0; i < outer[axis]; ++i) {
 					for (int j = 0; j < masklen; ++j) {
 						n = mask[j];
 						if (n < 0) { n = -n; elem = ' '; }
@@ -2765,7 +2625,7 @@ static void FunExpand(int axis)
 				}
 			} else {				// Generic case
 				int copylen = size[axis] * sizeof(char);
-				for (int i = 0; i < super[axis]; ++i) {
+				for (int i = 0; i < outer[axis]; ++i) {
 					for (int j = 0; j < masklen; ++j) {
 						n = mask[j];
 						if (n > 0) {
@@ -2831,7 +2691,7 @@ static void	FunDeal(void)
 		return;
 
 	// Allocate a bitmap to mark available slots
-	int nbytes = ALIGN(total,8) / 8;
+	int nbytes = ALIGN_UP(total,8) / 8;
 	uint8_t *bits = (uint8_t *)TempAlloc(sizeof(uint8_t), nbytes);
 	// 1 = available, 0 = already drawn
 	memset(bits, 0xff, nbytes);
@@ -3567,12 +3427,18 @@ static void FormatOut()
 	ARRAYINFO A;
 	int shape[MAXDIM];
 	char *pm;
+	int nr, nc;
 
 	ArrayInfo(&A);
 	if (!A.nelem)
 		return;
-	int nc = A.shape[A.rank-1];	// # of cols = # shape of last dimension
-	int nr = A.nelem / nc;		// total # of rows
+
+	if (ISSCALAR(&A))
+		nc = nr = 1;
+	else {
+		nc = A.shape[A.rank-1];	// # of cols = # shape of last dimension
+		nr = A.nelem / nc;		// total # of rows
+	}
 
 	FORMAT *pfmt = FormatAlloc(nc);
 	FormatUpdate((double *)A.vptr, A.nelem / nc, nc, pfmt);
@@ -3867,34 +3733,33 @@ static void FunIota(void)
 	double *pnew;
 	double num;
 	int i;
-	int nElemN;
+	int nelem;
 
 	// Argument must be numeric
 	if (!ISNUMBER(poprTop))
 		EvlError(EE_DOMAIN);
 
 	if (ISSCALAR(poprTop))	// Either a scalar
-		nElemN = (int)VNUM(poprTop);
+		nelem = (int)VNUM(poprTop);
 	else {					// Or a 1-element array
 		if (RANK(poprTop) != 1 || SHAPE(poprTop)[0] != 1)
 			EvlError(EE_LENGTH);
-		nElemN = (int)*(double *)VPTR(poprTop);
+		nelem = (int)*(double *)VPTR(poprTop);
 	}
 
-	if (nElemN < 0 || nElemN > MAXIND)
+	if (nelem < 0 || nelem > MAXIND)
 		EvlError(EE_INVALID_INDEX);
 
 	RANK(poprTop) = 1;
-	SHAPE(poprTop)[0] = nElemN;
+	SHAPE(poprTop)[0] = nelem;
 
-	if (!nElemN)	// Null vector
+	if (!nelem)	// Null vector
 		return;
 
-	pnew = TempAlloc(sizeof(double), nElemN);
+	pnew = DoubleAlloc(poprTop, nelem);
 	num = (double)g_origin;
-	VOFF(poprTop) = WKSOFF(pnew);
 
-	for (i = 1; i <= nElemN; ++i)
+	for (i = 1; i <= nelem; ++i)
 		*pnew++ = num++;
 }
 
@@ -3983,8 +3848,8 @@ static double IdentElement(int fun)
 
 static void Reduce(int fun, int axis)
 {
+	ARRAYINFO A;
 	aplshape	shape[MAXDIM];
-	int		size[MAXDIM];
 	int		d, stride, nelem, n, rank, newsize;
 	double	num, num2;
 	double	*pnew, *pf, *pd;
@@ -3994,48 +3859,37 @@ static void Reduce(int fun, int axis)
 	if (!ISARRAY(poprTop))
 		return;
 
-	rank = RANK(poprTop);	// rank >= 1
-	--rank;					// rank >= 0
-
-	for (d = rank, nelem = 1; d >= 0; --d) {
-		int sh = SHAPE(poprTop)[d];
-		shape[d] = sh;
-		size[d] = nelem;
-		nelem *= sh;
-	}
-
+	ArrayInfo(&A);
+	COPY_SHAPE(shape, SHAPE(poprTop), A.rank);
+	rank = A.rank - 1;		// New rank >= 0
+	nelem = A.nelem;
+	
 	// Remove one axis and reshape result
 	RANK(poprTop) = rank;
-	memcpy(&SHAPE(poprTop)[0], &shape[0], axis * sizeof(aplshape));
-	memcpy(&SHAPE(poprTop)[axis], &shape[axis+1], (rank - axis) * sizeof(aplshape));
+	memcpy(&SHAPE(poprTop)[0],    &A.shape[0],      axis * sizeof(aplshape));
+	memcpy(&SHAPE(poprTop)[axis], &A.shape[axis+1], (rank - axis) * sizeof(aplshape));
 
 	// If shape[axis]=1 or shape[other axis]=0 (i.e. nelem = 0) there's
 	// nothing to reduce. If the result is a scalar, return the identity
 	// element for this function.
-	if (shape[axis] == 1 || !nelem) {
+	if (A.shape[axis] == 1 || !nelem) {
 		if (!rank) {
-			TYPE(poprTop) = TNUM;
+			VOFF(poprTop) = MINDIM * sizeof(aplshape);
 			VNUM(poprTop) = IdentElement(fun);
 		}
 		return;
 	}
 
-	pf = VPTR(poprTop);
-	stride = size[axis];
-	newsize = nelem / shape[axis];
+	pf = A.vptr;
+	stride = A.stride[axis];
+	newsize = nelem / A.shape[axis];
 
 	TYPE(poprTop) = TNUM;
-	if (newsize == 1) {	// Result is a scalar
-		pnew = (double *)&VNUM(poprTop);
-	} else {			// Result is an array
-		// rank > 1
-		pnew = (double *)TempAlloc(sizeof(double), newsize);
-		VOFF(poprTop) = WKSOFF(pnew);
-	}
+	pnew = DoubleAlloc(poprTop, newsize);
 
 	do {
 		// Reduce
-		n = shape[axis] - 1;
+		n = A.shape[axis] - 1;
 		pd = pf + n * stride;
 		num = *pd;
 		while (n--) {
@@ -4051,11 +3905,11 @@ static void Reduce(int fun, int axis)
 			if (d == axis)
 				continue;
 			if (--shape[d]) {
-				pf += size[d];
+				pf += A.size[d];
 				break;
 			}
-			shape[d] = SHAPE(poprTop)[d];
-			pf -= (shape[d] - 1) * size[d];
+			shape[d] = A.shape[d];
+			pf -= (shape[d] - 1) * A.size[d];
 		}
 	} while (d >= 0);
 }
@@ -4064,7 +3918,7 @@ static void Scan(int fun, int axis)
 {
 	int	shape[MAXDIM];	// Shape of the argument
 	int size[MAXDIM];	// Sizes of axes of the argument
-	int super[MAXDIM];	// Number of super-arrays for each axis
+	int outer[MAXDIM];	// Number of super-arrays for each axis
 	int rank;			// Rank of the argument
 	int nelem;
 
@@ -4098,9 +3952,9 @@ static void Scan(int fun, int axis)
 	if (!nelem)
 		return;
 
-	// Fill in super[]
+	// Fill in outer[]
 	for (int i = 0, siz = 1; i < rank; ++i) {
-		super[i] = siz;
+		outer[i] = siz;
 		siz *= shape[i];
 	}
 
@@ -4119,7 +3973,7 @@ static void Scan(int fun, int axis)
 
 	if (fun != APL_MINUS && fun != APL_DIV && fun != APL_STILE) {
 		// Associative functions (scan left->right once)
-		for (int i = 0; i < super[axis]; ++i) {
+		for (int i = 0; i < outer[axis]; ++i) {
 			for (int j = 0; j < size[axis]; ++j) {
 				accum = *(psrc + j);
 				*(pdst + j) = accum;
@@ -4159,7 +4013,7 @@ static void Scan(int fun, int axis)
 		}
 	} else {
 		// Non-associative functions (scan right->left many times)
-		for (int i = 0; i < super[axis]; ++i) {
+		for (int i = 0; i < outer[axis]; ++i) {
 			for (int j = 0; j < size[axis]; ++j) {
 				psrc += inner - stride;	// last element in sub-array
 				pdst += inner - stride;
@@ -4390,22 +4244,19 @@ static int BoolValue()
 static char *StrValue(int *plen)
 {
 	int len;
-	char *ptr;
 
 	if (!ISCHAR(poprTop))
 		EvlError(EE_DOMAIN);
-	if (ISSCALAR(poprTop)) {
-		ptr = (char *)&poprTop->uval.xchr;
+	if (ISSCALAR(poprTop))
 		len = 1;
-	} else {
+	else {
 		if (RANK(poprTop) != 1)
 			EvlError(EE_RANK);
-		ptr = (char *)VPTR(poprTop);
 		len = SHAPE(poprTop)[0];
 	}
 
 	*plen = len;
-	return ptr;
+	return VPTR(poprTop);
 }
 
 static void VarSetSys(ENV *penv)
@@ -4634,7 +4485,7 @@ void SetName(int len, char *name, DESC *pd)
 static void VarSetNam(ENV *penv, int dims)
 {
 	int len;
-	int sizeold, sizenew;
+	int oldsize, newsize;
 	offset off;
 	VNAME *pn;
 	DESC *pd;
@@ -4651,60 +4502,62 @@ static void VarSetNam(ENV *penv, int dims)
 	penv->pCode += len;
 
 	// If we still don't have a descriptor, get one
-	if (pn->odesc)
+	if (pn->odesc) {
 		pd = (DESC *)WKSPTR(pn->odesc);
-	else {
+		oldsize = NumElem(pd) * (ISNUMBER(pd) ? sizeof(double) : sizeof(char));
+	} else {
 		if (dims)
 			EvlError(EE_UNDEFINED_VAR);
 		pd = GlobalDescAlloc();
 		pn->odesc = WKSOFF(pd);
+		oldsize = 0;
 	}
 
 	// Indexed assignment?
 	if (dims) {
+		// Yes; the cached type remains the same
 		OperPushDesc(pd);
 		EvlSetIndex(dims);
 		return;
 	}
+
 	// Cache value type in name table
 	pn->type = TYPE(poprTop);
+	newsize = NumElem(poprTop) * (ISNUMBER(poprTop) ? sizeof(double) : sizeof(char));
 
-	// New value is a scalar
-	if (ISSCALAR(poprTop)) {
-		if (TYPE(poprTop) == TNUM) {
-			if (ISARRAY(pd))
-				AplHeapFree(VOFF(pd));
-			TYPE(pd) = TNUM;
-			RANK(pd) = 0;
-			VNUM(pd) = VNUM(poprTop);
-		} else if (TYPE(poprTop) == TCHR) {
-			if (ISARRAY(pd))
-				AplHeapFree(VOFF(pd));
-			TYPE(pd) = TCHR;
-			RANK(pd) = 0;
-			VCHR(pd) = VCHR(poprTop);
+	if (oldsize) {	// Previously defined
+		int cmpsto = CMP_STORAGE(pd,poprTop);
+		off = VOFF(pd);				// We may need to release this block
+		*pd = *poprTop;
+		switch (cmpsto) {	// Old : New
+		case CMP_INT_INT:
+			return;					// Nothing else to do
+		case CMP_INT_EXT:
+			off = 0;
+			break;
+		case CMP_EXT_INT:
+			AplHeapFree(off);		// Release old block
+			return;
+		case CMP_EXT_EXT:
+			if (oldsize != newsize) {	// If not the same size, realloc
+				AplHeapFree(off);
+				off = 0;
+			}
+			break;
 		}
-		return;
+	} else {	// Previously undefined
+		*pd = *poprTop;
+		if (ISINTSTO(pd))
+			return;
+		off = 0;
 	}
 
-	// New value is an array
-	sizenew = NumElem(poprTop) *
-		(ISNUMBER(poprTop) ? sizeof(double) : sizeof(char));
-
-	if (ISARRAY(pd)) {	/* Old value is also an array */
-		sizeold = NumElem(pd) *
-			(ISNUMBER(pd) ? sizeof(double) : sizeof(char));
-		if (sizeold != sizenew) {	/* If not same size then realloc */
-			AplHeapFree(VOFF(pd));
-			off = AplHeapAlloc(sizenew, WKSOFF(pd));
-		}
-		else off = VOFF(pd);
-	} else
-		off = AplHeapAlloc(sizenew, WKSOFF(pd));
-
-	*pd = *poprTop;
+	// Allocate new external storage if necessary
+	if (!off)
+		off = AplHeapAlloc(newsize, WKSOFF(pd));
 	VOFF(pd) = off;
-	memcpy((char *)WKSPTR(off), WKSPTR(VOFF(poprTop)), sizenew);
+	// Copy new array to external storage
+	memcpy(WKSPTR(off), WKSPTR(VOFF(poprTop)), newsize);
 }
 
 VNAME *GetName(int len, char *pName)
@@ -4742,7 +4595,7 @@ VNAME *AddName(int len, char *pName)
 	size = sizeof(VNAME) + len;
 
 	// Name entries must be a multiple of sizeof(offset)
-	size = ALIGN(size, sizeof(offset));
+	size = ALIGN_UP(size, sizeof(offset));
 	if (pnamTop + size > (char *)phepBase)
 		EvlError(EE_NAMETAB_FULL);
 	pn = (VNAME *)pnamTop;
@@ -4780,6 +4633,7 @@ static void OperPush(int type, int rank)
 	if (PUSH(poprTop) <= (DESC *)phepTop)
 		EvlError(EE_STACK_OVERFLOW);
 
+	VOFF(poprTop) = MINOFF;
 	TYPE(poprTop) = type;
 	RANK(poprTop) = rank;
 }
@@ -4946,6 +4800,9 @@ static int NumElem(DESC *pv)
 	int nElem, rank;
 	aplshape *pshp;
 
+	if (ISSCALAR(pv))
+		return 1;
+
 	rank = RANK(pv) - 1;
 	pshp = SHAPE(pv);
 
@@ -4963,42 +4820,33 @@ static int NumElem(DESC *pv)
 static void ArrayInfo(ARRAYINFO *pai)
 {
 	DESC *pd = poprTop;
+	int rank = RANK(pd);
 	int nelem = 1;
-	int rank;
 
-	if (ISARRAY(pd)) {
-		rank = RANK(pd);
-		pai->vptr = VPTR(pd);
-		pai->step = 1;
-	} else {	// Pseudo vector
-		rank = 1;
-		SHAPE(pd)[0] = 1;
-		if (ISNUMBER(pd)) {
-			pai->xnum = VNUM(pd);
-			pai->vptr = (char *)&pai->xnum;
-		} else {
-			pai->xchr[0] = VCHR(pd);
-			pai->vptr = (char *)&pai->xchr[0];
-		}
-		pai->step = 0;	// Always reference the same element
-	}
+	// Copy shape and any possible local elements
+	COPY_SHAPE(SHAPE(pai), SHAPE(pd), MAXDIM);
+	// Pointer to first element
+	pai->vptr = VAPTR(pd,pai);
 
 	// Fill in shape[] and size[]
 	// Calculate nelem
 	for (int i = rank - 1; i >= 0; --i) {
-		int n = SHAPE(poprTop)[i];
-		pai->shape[i] = n;
+		int n = pai->shape[i];
 		pai->size[i] = nelem;
 		pai->stride[i] = nelem;
 		nelem *= n;
 	}
 
-	if (!ISARRAY(pd))
+	if (ISARRAY(pd))
+		pai->step = 1;
+	else {
+		pai->step = 0;
 		pai->stride[0] = 0;
+	}
 
-	// Fill in super[]
+	// Fill in outer[]
 	for (int i = 0, size = 1; i < rank; ++i) {
-		pai->super[i] = size;
+		pai->outer[i] = size;
 		size *= pai->shape[i];
 	}
 
@@ -5014,7 +4862,15 @@ static void ExtendArray(ARRAYINFO *pai, int axis)
 	int rank = pai->rank + 1;
 	if (axis > pai->rank)
 		EvlError(EE_INVALID_AXIS);
-	int scalar = rank == 2 && pai->nelem == 1;
+
+	// If using internal storage, copy elements to temp stack
+	char *pold = pai->vptr;
+	if (pold > (char *)pai && pold < ((char *)pai + sizeof(ARRAYINFO))) {
+		int size = pai->type == TNUM ? sizeof(double) : sizeof(char);
+		char *pnew = TempAlloc(size, pai->nelem);
+		memcpy(pnew, pold, size * pai->nelem);
+		pai->vptr = pnew;
+	}
 
 	// Open room for new axis in shape[]
 	for (int i = rank - 2; i >= axis; --i)
@@ -5026,14 +4882,14 @@ static void ExtendArray(ARRAYINFO *pai, int axis)
 	// Recalculate size[], stride[]
 	for (int i = rank - 1, size = 1; i >= 0; --i) {
 		pai->size[i] = size;
-		pai->stride[i] = scalar ? 0 : size;
+		pai->stride[i] = rank == 1 ? 0 : size;
 		size *= pai->shape[i];
 	}
 
-	// Recalculate super[]
-	for (int i = 0, siz = 1; i < rank; ++i) {
-		pai->super[i] = siz;
-		siz *= pai->shape[i];
+	// Recalculate outer[]
+	for (int i = 0, size = 1; i < rank; ++i) {
+		pai->outer[i] = size;
+		size *= pai->shape[i];
 	}
 
 	pai->rank = rank;
@@ -5045,6 +4901,20 @@ static void ExtendScalar(ARRAYINFO *psrc, ARRAYINFO *pdst, int axis)
 	// Copy rank and shape from array
 	int rank = psrc->rank;
 	int nelem = 1;
+
+	// Need to copy scalar to temp stack?
+	if (rank > MINDIM) {
+		// Yes; free space in shape[]
+		if (pdst->type == TNUM) {
+			double *pnew = TempAlloc(sizeof(double), 1);
+			*pnew = *(double *)pdst->vptr;
+			pdst->vptr = pnew;
+		} else {
+			char *pnew = TempAlloc(sizeof(char), 1);
+			*pnew = *(char *)pdst->vptr;
+			pdst->vptr = pnew;
+		}
+	}
 
 	for (int i = 0; i < rank; ++i)
 		pdst->shape[i] = psrc->shape[i];
@@ -5059,14 +4929,53 @@ static void ExtendScalar(ARRAYINFO *psrc, ARRAYINFO *pdst, int axis)
 		nelem *= pdst->shape[i];
 	}
 
-	// Recalculate super[]
+	// Recalculate outer[]
 	for (int i = 0, size = 1; i < rank; ++i) {
-		pdst->super[i] = size;
+		pdst->outer[i] = size;
 		size *= pdst->shape[i];
 	}
 
 	pdst->rank = rank;
 	pdst->nelem = nelem;
+}
+
+// Check if two items are conformable for scalar dyadic functions.
+// Raise error if not.
+// Return length of result.
+static int DyadicConformable(ARRAYINFO *p1, ARRAYINFO *p2, DESC *pr)
+{
+	// scalar + scalar?
+	if (ISSCALAR(p1) && ISSCALAR(p2))
+		return 1;
+
+	// scalar + array?
+	if (ISSCALAR(p1))
+		return p2->nelem;
+
+	// array + scalar?
+	if (ISSCALAR(p2)) {
+		// Copy array rank and shape to result
+		RANK(pr) = RANK(p1);
+		for (int i = 0; i < RANK(p1); ++i)
+			SHAPE(pr)[i] = SHAPE(p1)[i];
+		return p1->nelem;
+	}
+
+	// array + array
+	if (RANK(p1) != RANK(p2))
+		EvlError(EE_RANK);
+	
+	if (p1->nelem != p2->nelem)
+		EvlError(EE_LENGTH);
+
+	aplshape *ps1 = SHAPE(p1);
+	aplshape *ps2 = SHAPE(p2);
+
+	for (int i = 0; i < RANK(p1); ++i)
+		if (ps1[i] != ps2[i])
+			EvlError(EE_LENGTH);
+
+	return p1->nelem;
 }
 
 // Check if two arrays have the same rank and shape
@@ -5143,7 +5052,7 @@ offset AplHeapAlloc(int size, offset off)
 	// The 'length' of a heap cell includes the header and
 	// the data and it's always a multiple of sizeof(double).
 	size += sizeof(HEAPCELL);
-	size = ALIGN(size, sizeof(double));
+	size = ALIGN_UP(size, sizeof(double));
 
 	// See if there's a block in the free list
 	// that could fulfill this request
@@ -5229,6 +5138,63 @@ void AplHeapFree(offset off)
 	// Could not coalesce; add to the free list
 	pf->follow = hepFree.follow;
 	hepFree.follow = WKSOFF(pf);
+}
+
+// Allocate storage for 'nelem' characters.
+// If this amount fits into the descriptor, use it. In this case
+// the offset will be relative to the beginning of the shape[]
+// array inside the descriptor. Otherwise use the temporary array
+// stack and make the offset relative to the beginning of the workspace.
+// RANK(pd) must be valid.
+char *CharAlloc(DESC *pd, size_t nelem)
+{
+	char *ptr;
+
+	assert(pd->rank <= MAXDIM);
+	int nfree = ((MAXDIM - MINDIM) * sizeof(aplshape)) / sizeof(char);
+
+	if (pd->rank <= MINDIM && nelem <= nfree) {
+		ptr = (char *)VIPTR(pd);
+		VOFF(pd) = MINOFF;
+	} else {
+		ptr = TempAlloc(sizeof(char), nelem);
+		VOFF(pd) = WKSOFF(ptr);
+	}
+
+	return ptr;
+}
+
+double *DoubleAlloc(DESC *pd, size_t nelem)
+{
+	double *ptr;
+
+	assert(pd->rank <= MAXDIM);
+	int nfree = ((MAXDIM - MINDIM) * sizeof(aplshape)) / sizeof(double);
+
+	if (pd->rank <= MINDIM && nelem <= nfree) {
+		ptr = (double *)VIPTR(pd);
+		VOFF(pd) = MINOFF;
+	} else {
+		ptr = TempAlloc(sizeof(double), nelem);
+		VOFF(pd) = WKSOFF(ptr);
+	}
+
+	return ptr;
+}
+
+int *AsInt(DESC *pd, int nelem)
+{
+	int *pint = TempAlloc(sizeof(int), nelem);
+	double *pdbl = VPTR(pd);
+
+	for (int i = 0; i < nelem; ++i) {
+		int elem = pdbl[i];
+		if ((double)elem != pdbl[i])
+			EvlError(EE_DOMAIN);
+		pint[i] = elem;
+	}
+
+	return pint;
 }
 
 void EvlError(int errnum)

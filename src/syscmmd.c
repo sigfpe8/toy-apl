@@ -213,7 +213,7 @@ int Fns(int argc, char **argv)
 		if (IS_FUNCTION(pn))
 			print_line("   %s/%d\n", pn->name, pn->type - TFUN);	// Print name/arity
 		len = sizeof(VNAME) + pn->len;
-		len = ALIGN(len, sizeof(offset));
+		len = ALIGN_UP(len, sizeof(offset));
 		pn = (VNAME *)((uchar *)pn + len);
 	}
 	return OK;
@@ -458,7 +458,7 @@ int Vars(int argc, char **argv)
 		if (IS_VARIABLE(pn) && pn->type != TUND)
 			print_line("   %s\n", pn->name);
 		len = sizeof(VNAME) + pn->len;
-		len = ALIGN(len, sizeof(offset));
+		len = ALIGN_UP(len, sizeof(offset));
 		pn = (VNAME *)((uchar *)pn + len);
 	}
 	return OK;

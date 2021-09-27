@@ -89,7 +89,7 @@ void SaveFun(FUNCTION *pfun, LEXER *plex)
 	// Function structure:
 	//   header - names (align) literals - line offsets - source - object
 
-	off = ALIGN(pfun->nHdrSiz, sizeof(double));
+	off = ALIGN_UP(pfun->nHdrSiz, sizeof(double));
 	snames = off;
 
 	// Literals (can be absent)

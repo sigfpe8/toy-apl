@@ -1,6 +1,10 @@
 ## Welcome to toyAPL (WIP)!
 
-ToyAPL implements the basic features of APL\360 and a few things from APL.SV (the format and execute functions). This is still work in progress.
+ToyAPL implements the basic features of APL\360 and a few things from APL.SV (the format and execute functions). I am a C programmer with no APL experience. This implementation is my attempt to learn APL while also trying to examine it with the implementers' eye. So, obviously it is naïve and inefficient in many ways, but, as is often said, the journey is more important than the destination.
+
+I am aware of other implementations with available source code (e.g. GNU APL), but examining these implementations would deprive me of the joys of discovery and of making my own mistakes so I have not looked at them.
+
+This is still work in progress.
 
 ## Platforms
 

@@ -27,7 +27,7 @@ typedef	uint8_t		aplrank;
 typedef	uint16_t	aplshape;
 #define	MAXWKSSZ	64				// Max WS size: 64 KB
 #define	DEFWKSSZ	64				// Default WS size: 64 KB
-#define	BASDIM		2				// # of dims in first part of DESC
+#define	MINDIM		2				// # of dimensions available for internal storage
 #define	MAXDIM		6				// Max # of dimensions
 #define	MAXIND		65535			// Highest array index
 #define	DESCSZ		16				// sizeof(DESC)
@@ -40,7 +40,7 @@ typedef	uint16_t	aplrank;
 typedef	uint32_t	aplshape;
 #define	MAXWKSSZ	(2048*1024)		// Max WS size: 2 GB
 #define	DEFWKSSZ	1024			// Default WS size: 1 MB
-#define	BASDIM		2				// # of dims in first part of DESC
+#define	MINDIM		2				// # of dimensions available for internal storage
 #define	MAXDIM		14				// Max # of dimensions
 #define	MAXIND		INT32_MAX		// Highest array index
 #define	DESCSZ		64				// sizeof(DESC)
@@ -53,7 +53,7 @@ typedef	uint16_t	aplrank;
 typedef	uint32_t	aplshape;
 #define	MAXWKSSZ	(16384*1024)	// Max WS size: 16 GB
 #define	DEFWKSSZ	(512*1024)		// Default WS size: 512 MB
-#define	BASDIM		5				// # of dims in first part of DESC
+#define	MINDIM		5				// # of dimensions available for internal storage
 #define	MAXDIM		13				// Max # of dimensions
 #define	MAXIND		INT32_MAX		// Highest array index
 #define	DESCSZ		64				// sizeof(DESC)
@@ -81,15 +81,10 @@ typedef unsigned long	ulong;
 */
 
 typedef struct {
-	offset	 doff;			// Data offset if array
+	offset	 doff;			// Data offset
 	apltype	 type;			// Data type
 	aplrank	 rank;			// Array rank
-	aplshape shap[BASDIM];	// Array shape
-	union {					// Scalars or continuation of shape[]
-		char    xchr[8];	// Character
-		double	xdbl;		// Number
-		aplshape xshp[MAXDIM-BASDIM];
-	} uval;
+	aplshape shape[MAXDIM];	// Array shape
 } DESC;
 
 // APL data types
@@ -104,19 +99,33 @@ typedef struct {
 #define	TFUN2	(TFUN+2)	// Dyadic function
 
 // Macros to access descriptor fields
-#define	TYPE(p)	((p)->type)
-#define	RANK(p)	((p)->rank)
-#define	VNUM(p)	((p)->uval.xdbl)
-#define	VCHR(p)	((p)->uval.xchr[0])
-#define	VPTR(p)	((void *)((char *)pwksBase + (p)->doff))
-#define	VOFF(p)	((p)->doff)
-#define	SHAPE(p) ((p)->shap)
+#define	TYPE(p)		((p)->type)
+#define	RANK(p)		((p)->rank)
+#define	SHAPE(p) 	((p)->shape)
+#define	VOFF(p)		((p)->doff)
+#define	VIPTR(p)	&((p)->shape[MINDIM])
+#define VNUM(p) 	*(double *)VIPTR(p)
+#define VCHR(p) 	*(char *)VIPTR(p)
+#define	VPTR(p)		((void *)((ISINTSTO(p) ? (char *)(p)->shape  : (char *)pwksBase) + VOFF(p)))
+#define VAPTR(p,pa)	((void *)((ISINTSTO(p) ? (char *)(pa)->shape : (char *)pwksBase) + VOFF(p)))
+#define	MINOFF		(MINDIM * sizeof(aplshape))
 
 #define	ISARRAY(p)	(RANK(p) > 0)
 #define	ISSCALAR(p)	(RANK(p) == 0)
 #define	ISNUMBER(p)	((p)->type & (TINT | TNUM))
 #define	ISCHAR(p)	((p)->type & TCHR)
 #define	ISFUNCT(p)	((p)->type & TFUN)
+#define	ISINTSTO(p)	(VOFF(p) < sizeof(DESC))	// Internal storage
+#define	ISEXTSTO(p)	(VOFF(p) > sizeof(DESC))	// External storage
+
+#define	COPY_SHAPE(dst, src, num) memcpy(dst, src, num * sizeof(aplshape))
+
+// Macros to help compare storage types
+#define	CMP_STORAGE(p1,p2)	(ISEXTSTO(p1)*2 + ISEXTSTO(p2))
+#define	CMP_INT_INT			0
+#define	CMP_INT_EXT			1
+#define	CMP_EXT_INT			2
+#define	CMP_EXT_EXT			3
 
 // Macros to help conformability tests
 #define	CMP_TYPES(p1,p2)	((ISARRAY(p1))*2 + (ISARRAY(p2)))
@@ -130,17 +139,19 @@ extern void GlobalDescFree(DESC *pd);
 
 // Array organization
 typedef struct {
-	char *vptr;			// Pointer to elements
-	int type;			// Base type (TNUM, TCHR)
-	int rank;			// Array rank
-	int nelem;			// # of elements
-	int step;			// 0 for scalar, 1 for array
-	double xnum;		// Numeric scalar
-	char xchr[4];		// Character scalar
-	int shape[MAXDIM];	// Elements per axis
-	int size[MAXDIM];	// Inner elements
-	int super[MAXDIM];	// Outer elements
-	int stride[MAXDIM];	// Distance from next element
+	double	align;			// Guarantee that the following fields are aligned
+	// Copy of DESC fields
+	offset	 doff;			// Data offset if array
+	apltype	 type;			// Data type
+	aplrank	 rank;			// Array rank
+	aplshape shape[MAXDIM];	// Array shape
+
+	void *vptr;				// Pointer to elements
+	int nelem;				// # of elements
+	int step;				// 0 for scalar, 1 for array
+	int size[MAXDIM];		// # of inner elements
+	int outer[MAXDIM];		// # of outer elements
+	int stride[MAXDIM];		// Distance from next element
 	// For regular arrays, stride == size.
 	// For scalars extended to arrays, stride = 0 so that scanning
 	// them always accesses the same element (the scalar).
@@ -152,9 +163,9 @@ typedef struct {
 	int	index;		// Current index (0-based)
 	int shape;		// Number of elements at this level
 	int	size;		// Number of elements including lower levels
-	double *ptr;	// Pointer to current index (array)
-	double *beg;	// Pointer to first index (array)
-	double *end;	// Pointer to last index+1 (array)
+	int *ptr;		// Pointer to current index (array)
+	int *beg;		// Pointer to first index (array)
+	int *end;		// Pointer to last index+1 (array)
 } INDEX;
 
 int CreateIndex(INDEX *pi, int n);
@@ -488,7 +499,7 @@ typedef struct {
 #define	OK		1
 #define	ERROR	0
 
-#define	ALIGN(val,siz)		(((long long)(val) + (siz)-1) & -(long long)(siz))
+#define	ALIGN_UP(val,siz)	(((long long)(val) + (siz)-1) & -(long long)(siz))
 #define	ALIGN_DOWN(val,siz)	((long long)(val) & -(long long)(siz))
 #define	SIGN(val)			((val) ? ((val) < 0 ? -1 : 1) : 0)
 

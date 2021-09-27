@@ -111,7 +111,7 @@ void InitLexer(LEXER *plex, int srclen)
 	plex->pexprBase = buffer;
 	plex->fInQuotes = 0;
 
-	plex->plinBase = (offset *)ALIGN(plex->psrcEnd, sizeof(double));
+	plex->plinBase = (offset *)ALIGN_UP(plex->psrcEnd, sizeof(double));
 
 	InitLexerAux(plex);
 }
