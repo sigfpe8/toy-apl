@@ -4,6 +4,7 @@
 // Some naive implementations of linear algebra functions
 // not typically available as primitives in APL.
 
+#include <math.h>
 #include <string.h>
 
 #include "apl.h"
@@ -40,7 +41,23 @@ int MatRref(double *mat, int nr, int nc)
 	for (int r = 0; r < nr; ++r) {
 		if (c >= nc) goto end;
 		int i = r;
-		// Find non-zero pivot
+#if	1	// Partial pivoting
+		// Find largest pivot in this column
+		double pivot = 0.0;
+		do {
+			for (int ii = r; ii < nr; ++ii) {
+				double temp = fabs(MAT(ii,c));
+				if (temp > pivot) {
+					i = ii;
+					pivot = temp;
+				}
+			}
+			if (pivot == 0.0) {	// No pivot in this column
+				// Advance to next one
+				if (++c == nc) goto end;	// Done
+			}
+		} while (pivot == 0.0);
+#else	// Just get the first non-zero pivot
 		while (MAT(i,c) == 0.0) {
 			++i;
 			if (i == nr) {
@@ -49,6 +66,7 @@ int MatRref(double *mat, int nr, int nc)
 				if (c == nc) goto end;
 			}
 		}
+#endif
 		if (i != r) {
 			if (!tmp)
 				tmp = TempAlloc(sizeof(double), nc);
@@ -63,6 +81,9 @@ int MatRref(double *mat, int nr, int nc)
 			++rank;
 		double mult = MAT(r,c);
 		double *row_r;
+#ifdef	RREF_DEBUG
+		print_line("\nPivot = %g\n", mult);
+#endif
 		if (mult != 1.0) {
 			// Multiply row r by 1/M[r,c]
 			mult = 1.0 / mult;
