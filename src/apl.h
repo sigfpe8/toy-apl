@@ -492,6 +492,7 @@ typedef struct {
 #define	SYS_TS			10	// Timestamp
 #define	SYS_DBG			11	// Debug flags
 #define	SYS_PID			12	// Process id
+#define	SYS_LU			13	// LU Matrix decomposition
 
 // Miscelaneous
 #define	TRUE	1
@@ -535,6 +536,7 @@ extern int  FGetLine(FILE *pf, char *achLine, int nLen);
 #define	GetLine(buf,len)	FGetLine(stdin,buf,len)
 extern void InitEnvFromLexer(ENV *penv, LEXER *plex);
 extern void LoadFile(LEXER *plex, char *filename);
+extern int	MatLU(double *mat, int nr, int nc);
 extern int	MatRref(double *mat, int nr, int nc);
 extern void PutErrorChar(int chr);
 extern void PutDashLine(int len, char *szFmt, ...);

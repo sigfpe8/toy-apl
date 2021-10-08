@@ -120,3 +120,95 @@ end:
 #endif
 	return rank;
 }
+
+int MatLU(double *matl, int nr, int nc)
+{
+	double *mat = matl + nr * nc;
+	int rank = 0;
+	int maxc = min(nr, nc);	// Restrict rank to this size
+
+	// Temp row used for swapping rows
+	// Allocated only when needed
+	double *tmp = 0;
+
+//#define	RREF_DEBUG
+#ifdef	RREF_DEBUG
+	print_line("\nMatRref() initial matrix\n");
+	DescPrintln(poprTop);
+#endif
+
+	int c = 0;	// Current lead column
+	double pivot;
+	double mult;
+
+	// Scan all rows
+	for (int r = 0; r < nr; ++r) {
+		if (c >= nc) goto end;
+		int i = r;
+#if	1	// Partial pivoting
+		// Find largest pivot in this column
+		pivot = 0.0;
+		do {
+			for (int ii = r; ii < nr; ++ii) {
+				double temp = fabs(MAT(ii,c));
+				if (temp > pivot) {
+					i = ii;
+					pivot = temp;
+				}
+			}
+			if (pivot == 0.0) {	// No pivot in this column
+				// Advance to next one
+				if (++c == nc) goto end;	// Done
+			}
+		} while (pivot == 0.0);
+#else	// Just get the first non-zero pivot
+		while ((pivot = MAT(i,c)) == 0.0) {
+			++i;
+			if (i == nr) {
+				i = r;
+				++c;
+				if (c == nc) goto end;
+			}
+		}
+#endif
+		if (i != r) {
+			if (!tmp)
+				tmp = TempAlloc(sizeof(double), nc);
+			SWAP_ROWS(i,r);
+#ifdef	RREF_DEBUG
+			print_line("\nSwapped rows %d and %d\n", i, r);
+			DescPrintln(poprTop);
+#endif
+		}
+		// Found one pivot
+		if (c < maxc)
+			++rank;
+#ifdef	RREF_DEBUG
+		print_line("\nPivot = %g\n", pivot);
+#endif
+		matl[r*nc + c] = 1.0;
+		for (i = r + 1; i < nr; ++i) {
+			mult = MAT(i,c) / pivot;
+			matl[i*nc + c] = mult;
+			if (mult != 0.0) {
+				double *row_r = ROW(r);
+				double *row_i = ROW(i);
+				for (int k = 0; k < nc; ++k) {
+					*row_i++ -= *row_r++ * mult;
+				}
+				MAT(i,c) = 0.0; // Force 0, avoid precision errors
+#ifdef	RREF_DEBUG
+				print_line("\nAdded row %d x %g to row %d\n", r, mult, i);
+				DescPrintln(poprTop);
+#endif
+			}
+		}
+		++c;
+	}
+
+end:
+#ifdef	RREF_DEBUG
+	print_line("\nRank=%d\n", rank);
+#endif
+	return rank;
+}

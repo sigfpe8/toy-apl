@@ -37,6 +37,7 @@ NameIndex SysNames[] = {
 	{ "dbg",		APL_VARSYS,		SYS_DBG		},
 	{ "ident",		APL_SYSFUN1,	SYS_IDENT	},
 	{ "io",			APL_VARSYS,		SYS_IO		},
+	{ "lu",			APL_SYSFUN1,	SYS_LU		},
 	{ "pid",		APL_VARSYS,		SYS_PID		},
 	{ "pp",			APL_VARSYS,		SYS_PP		},
 	{ "rref",		APL_SYSFUN1,	SYS_RREF	},

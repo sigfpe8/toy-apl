@@ -72,6 +72,7 @@ static void		QuoteQuadInp(void);
 static void		Reduce(int fun, int dim);
 static void		Scan(int fun, int dim);
 static void		SysIdent(void);
+static void		SysLU(void);
 static void		SysRref(void);
 static FUNCTION* VarGetFun(ENV *penv);
 static void		VarGetNam(ENV *penv);
@@ -1706,6 +1707,9 @@ static void FunSystem1(int fun)
 	switch (fun) {
 	case SYS_IDENT:
 		SysIdent();
+		break;
+	case SYS_LU:
+		SysLU();
 		break;
 	case SYS_RREF:
 		SysRref();
@@ -4766,6 +4770,36 @@ static void SysIdent(void)
 		*pdst = 1.0;
 		pdst += n + 1;
 	}
+}
+
+static void SysLU(void)
+{
+	double *mat;
+
+	if (!ISNUMBER(poprTop))
+		EvlError(EE_DOMAIN);
+	if (!ISARRAY(poprTop) || RANK(poprTop) != 2)
+		EvlError(EE_RANK);
+
+	int nr = SHAPE(poprTop)[0];
+	int nc = SHAPE(poprTop)[1];
+	size_t size = nr * nc;
+
+	// LU decomposition returns L and U as sub-matrices of
+	// a rank-3 array: L = A[0;;] and U = A[1;;]
+	mat = TempAlloc(sizeof(double), 2 * size);
+	// Zero out L
+	memset(mat, 0, size * sizeof(double));
+	// Copy initial matrix to U
+	memcpy(mat + size, VPTR(poprTop), size * sizeof(double));
+	VOFF(poprTop) = WKSOFF(mat);
+	// Make it a rank-3 array
+	RANK(poprTop) = 3;
+	SHAPE(poprTop)[2] = SHAPE(poprTop)[1];
+	SHAPE(poprTop)[1] = SHAPE(poprTop)[0];
+	SHAPE(poprTop)[0] = 2;
+
+	MatLU(mat, nr, nc);
 }
 
 static void SysRref(void)
