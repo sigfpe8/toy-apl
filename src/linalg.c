@@ -10,6 +10,7 @@
 #include "apl.h"
 
 #define	MAT(r_,c_)	mat[(r_)*nc+(c_)]
+#define	MATL(r_,c_)	matl[(r_)*nc+(c_)]
 #define	ROW(r_)		&mat[(r_)*nc]
 #define	ROW_SIZE	(nc*sizeof(double))
 #define	SWAP_ROWS(i_,j_)	{			\
@@ -186,10 +187,10 @@ int MatLU(double *matl, int nr, int nc)
 #ifdef	RREF_DEBUG
 		print_line("\nPivot = %g\n", pivot);
 #endif
-		matl[r*nc + c] = 1.0;
+		MATL(r,c) = 1.0;
 		for (i = r + 1; i < nr; ++i) {
 			mult = MAT(i,c) / pivot;
-			matl[i*nc + c] = mult;
+			MATL(i,c) = mult;
 			if (mult != 0.0) {
 				double *row_r = ROW(r);
 				double *row_i = ROW(i);
