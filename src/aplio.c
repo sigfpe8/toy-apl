@@ -145,7 +145,7 @@ void PutDashLine(int linelen, char *szFmt, ...)
 	va_end(args);
 }
 
-void PutErrorLine(char *szFmt, ...)
+void print_error_line(char *szFmt, ...)
 {
 	va_list args;
 
@@ -154,12 +154,12 @@ void PutErrorLine(char *szFmt, ...)
 	va_end(args);
 }
 
-void PutChar(int chr)
+void put_char(int chr)
 {
 	putchar(chr);
 }
 
-void PutErrorChar(int chr)
+void put_error_char(int chr)
 {
 	putc(chr, stderr);
 }

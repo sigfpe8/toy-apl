@@ -269,13 +269,13 @@ int Help(int argc, char *argv[])
 
 			while (w < nWidth) {
 				w = (w + 8) & ~7;
-				PutChar('\t');
+				put_char('\t');
 			}
 
 			print_line("%s\n", pcm->szHelp);
 		}
 
-		PutChar('\n');
+		put_char('\n');
 	} else {
 		char *pch;
 

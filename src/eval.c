@@ -5230,7 +5230,7 @@ int *AsInt(DESC *pd, int nelem)
 
 void EvlError(int errnum)
 {
-	PutErrorLine("\n[EvalError] %s\n", apchEvlMsg[errnum]);
+	print_error_line("\n[EvalError] %s\n", apchEvlMsg[errnum]);
 	// Reset evaluation stacks
 	poprTop = poprBase + 1;
 	parrTop = parrBase;

@@ -1,6 +1,8 @@
 // Released under the MIT License; see LICENSE
 // Copyright (c) 2021 José Cordeiro
 
+#include <string.h>
+
 #include "utf8.h"
 
 // Output buffer 'buf' must have room for 4 bytes
@@ -41,7 +43,7 @@ int wchar_to_utf8(int wchr, char *buf, int len)
 	return 4;
 }
 
-int utf8_to_wchar(char *pchr, int avl, int *plen)
+int utf8_to_wchar(const char *pchr, int avl, int *plen)
 {
 	int code;
 	int byte;
@@ -81,4 +83,26 @@ int utf8_to_wchar(char *pchr, int avl, int *plen)
 	*plen = len;
 
 	return code;
+}
+
+// Return # of Unicode characters in UTF-8 byte string
+// Assumes the UTF-8 string is well formed.
+int utf8_len(const char *buf, const char *end)
+{
+	int len = 0;
+
+	// When end == NULL, the string is zero-terminated
+	if (!end)
+		end = buf + strlen(buf);
+
+	for (const char *pchr = buf; pchr < end; ++pchr) {
+		++len;
+		if (*pchr > 127) {
+			++pchr;
+			while (((*pchr & UTF8_MASK) == UTF8_CONT) && pchr < end)
+				++pchr;
+		}
+	}
+
+	return len;
 }

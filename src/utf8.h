@@ -17,6 +17,7 @@
 #define	UTF8_CONT		0x80	// 10xx xxxx
 
 extern int wchar_to_utf8(int wchr, char *buf, int len);
-extern int utf8_to_wchar(char *pchr, int avl, int *plen);
+extern int utf8_to_wchar(const char *pchr, int avl, int *plen);
+extern int utf8_len(const char *buf, const char *end);
 
 #endif	// _UTF8_H

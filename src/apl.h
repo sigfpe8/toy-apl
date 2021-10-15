@@ -538,11 +538,11 @@ extern void InitEnvFromLexer(ENV *penv, LEXER *plex);
 extern void LoadFile(LEXER *plex, char *filename);
 extern int	MatLU(double *mat, int nr, int nc);
 extern int	MatRref(double *mat, int nr, int nc);
-extern void PutErrorChar(int chr);
+extern void put_error_char(int chr);
 extern void PutDashLine(int len, char *szFmt, ...);
-extern void PutErrorLine(char *szFmt, ...);
+extern void print_error_line(char *szFmt, ...);
 extern int	print_line(char *szFmt, ...);
-extern void PutChar(int chr);
+extern void put_char(int chr);
 extern int	Read_line(char *prompt, char *buffer, int buflen);
 extern void SysCommand(char *pcmd);
 extern void	*TempAlloc(int size, int nItems);
@@ -567,6 +567,7 @@ extern void	*TempAlloc(int size, int nItems);
 extern jmp_buf jbStack[];
 extern int jbSP;
 
-#define DEL_SYMBOL	"∇"
+#define DEL_SYMBOL			"∇"
+#define	HAVE_ANSI_CODES		1
 
 #endif	// _APL_H

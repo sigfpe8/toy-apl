@@ -670,18 +670,62 @@ void EmitNumber(LEXER *plex, double num)
 	EmitTok(plex,APL_NUM);
 }
 
+#ifdef	HAVE_ANSI_CODES
+void ansi_normal()
+{
+	print_error_line("\033[m");
+}
+
+void ansi_bold()
+{
+	print_error_line("\033[1m");
+}
+
+void ansi_red()
+{
+//	print_line("\033[38;5;9m");
+	print_error_line("\033[31m");
+}
+
+void ansi_magenta()
+{
+	print_error_line("\033[35m");
+}
+#endif
+
 void LexError(LEXER *plex,int errnum)
 {
-	PutErrorLine("\n%s\n", plex->pexprBase);
+#ifdef	HAVE_ANSI_CODES
+	print_error_line("\n[LexicalError] ");
+	ansi_magenta();
+	print_error_line("%s\n", apchLexMsg[errnum]);
+	ansi_normal();
 
 	if (plex->pChrBase >= plex->pexprBase && plex->pChrBase < (char *)plex->pobjBase) {
-		int i = plex->pChrBase - plex->pexprBase;
-		while (i--)
-			PutErrorChar(' ');
-		PutErrorLine("^\n");
+		print_error_line("\n%s", g_blanks);
+		// Initial part (normal)
+		int len = plex->ptokBase - plex->pexprBase;
+		print_error_line("%.*s", len, plex->pexprBase);
+		// Token that caused error
+		ansi_magenta();
+		len = plex->pChr - plex->ptokBase;
+		print_error_line("%.*s", len, plex->ptokBase);
+		// Rest of line (normal)
+		ansi_normal();
+		print_error_line("%s\n\n", plex->pChr);
 	}
+#else
+	print_error_line("\n[LexicalError] %s\n", apchLexMsg[errnum]);
+	print_error_line("\n%s%s\n", g_blanks, plex->pexprBase);
 
-	PutErrorLine("[LexicalError] %s\n", apchLexMsg[errnum]);
+	if (plex->pChrBase >= plex->pexprBase && plex->pChrBase < (char *)plex->pobjBase) {
+		int len = utf8_len(plex->pexprBase, plex->pChrBase);
+		print_error_line("%s", g_blanks);
+		while (len--)
+			put_error_char(' ');
+		print_error_line("^\n");
+	}
+#endif
 
 	LONGJUMP();
 }
