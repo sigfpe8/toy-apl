@@ -4776,9 +4776,10 @@ static void SysLU(void)
 {
 	double *mat;
 
+	// Must be a square numeric matrix
 	if (!ISNUMBER(poprTop))
 		EvlError(EE_DOMAIN);
-	if (!ISARRAY(poprTop) || RANK(poprTop) != 2)
+	if (RANK(poprTop) != 2  ||  SHAPE(poprTop)[0] != SHAPE(poprTop)[1])
 		EvlError(EE_RANK);
 
 	int nr = SHAPE(poprTop)[0];

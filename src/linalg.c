@@ -29,6 +29,8 @@ int MatRref(double *mat, int nr, int nc)
 	// Temp row used for swapping rows
 	// Allocated only when needed
 	double *tmp = 0;
+	double pivot;
+	double mult;
 
 //#define	RREF_DEBUG
 #ifdef	RREF_DEBUG
@@ -44,7 +46,7 @@ int MatRref(double *mat, int nr, int nc)
 		int i = r;
 #if	1	// Partial pivoting
 		// Find largest pivot in this column
-		double pivot = 0.0;
+		pivot = 0.0;
 		do {
 			for (int ii = r; ii < nr; ++ii) {
 				double temp = fabs(MAT(ii,c));
@@ -59,7 +61,7 @@ int MatRref(double *mat, int nr, int nc)
 			}
 		} while (pivot == 0.0);
 #else	// Just get the first non-zero pivot
-		while (MAT(i,c) == 0.0) {
+		while ((pivot = MAT(i,c)) == 0.0) {
 			++i;
 			if (i == nr) {
 				i = r;
@@ -80,14 +82,13 @@ int MatRref(double *mat, int nr, int nc)
 		// Found one pivot
 		if (c < maxc)
 			++rank;
-		double mult = MAT(r,c);
 		double *row_r;
 #ifdef	RREF_DEBUG
 		print_line("\nPivot = %g\n", mult);
 #endif
-		if (mult != 1.0) {
+		if (pivot != 1.0) {
 			// Multiply row r by 1/M[r,c]
-			mult = 1.0 / mult;
+			mult = 1.0 / pivot;
 			row_r = ROW(r);
 			for (int j = 0; j < nc; ++j)
 				*row_r++ *= mult;
@@ -98,16 +99,16 @@ int MatRref(double *mat, int nr, int nc)
 #endif
 		}
 		for (i = 0; i < nr; ++i) {
-			mult = -MAT(i,c);
+			mult = MAT(i,c);
 			if (i != r && mult != 0.0) {
 				row_r = ROW(r);
 				double *row_i = ROW(i);
 				for (int k = 0; k < nc; ++k) {
-					*row_i++ += *row_r++ * mult;
+					*row_i++ -= *row_r++ * mult;
 				}
 				MAT(i,c) = 0.0; // Force 0, avoid precision errors
 #ifdef	RREF_DEBUG
-				print_line("\nAdded row %d x %g to row %d\n", r, mult, i);
+				print_line("\nSubtracted row %d x %g from row %d\n", r, mult, i);
 				DescPrintln(poprTop);
 #endif
 			}
@@ -131,16 +132,16 @@ int MatLU(double *matl, int nr, int nc)
 	// Temp row used for swapping rows
 	// Allocated only when needed
 	double *tmp = 0;
+	double pivot;
+	double mult;
 
 //#define	RREF_DEBUG
 #ifdef	RREF_DEBUG
-	print_line("\nMatRref() initial matrix\n");
+	print_line("\nMatLU() initial matrix\n");
 	DescPrintln(poprTop);
 #endif
 
 	int c = 0;	// Current lead column
-	double pivot;
-	double mult;
 
 	// Scan all rows
 	for (int r = 0; r < nr; ++r) {
@@ -199,7 +200,7 @@ int MatLU(double *matl, int nr, int nc)
 				}
 				MAT(i,c) = 0.0; // Force 0, avoid precision errors
 #ifdef	RREF_DEBUG
-				print_line("\nAdded row %d x %g to row %d\n", r, mult, i);
+				print_line("\nSubtracted row %d x %g from row %d\n", r, mult, i);
 				DescPrintln(poprTop);
 #endif
 			}
