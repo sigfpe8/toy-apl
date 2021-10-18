@@ -47,6 +47,7 @@ int g_origin = 1;
 int g_print_prec = 10;
 int g_dbg_flags;
 double g_comp_tol = 1e-14;
+ENV *g_penv;
 
 char *g_blanks = "      ";
 

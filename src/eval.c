@@ -117,6 +117,8 @@ void InitEnvFromLexer(ENV *penv, LEXER *plex)
 	penv->plinBase = plex->plinBase;
 	penv->pvarBase = poprBase + 1;	// Used by NUM_VALS()
 	penv->flags = 0;
+	penv->ppenv = g_penv;	// Save previous environment
+	g_penv = penv;			// Set new one
 }
 
 void InitEnvFromFunction(ENV *penv, FUNCTION *pfun)
@@ -127,6 +129,16 @@ void InitEnvFromFunction(ENV *penv, FUNCTION *pfun)
 	penv->plinBase = (offset *)(penv->plitBase + pfun->nLits);
 	penv->pvarBase = 0;		// Set in EvlFunction()
 	penv->flags = 0;
+	penv->ppenv = g_penv;	// Save previous environment
+	g_penv = penv;			// Set new one
+}
+
+// We keep the pointer to the currently executing environment in a
+// global variable to avoid the hassle of having to pass it to every
+// function involded in evaluation.
+void PopEnv(ENV *penv)
+{
+	g_penv = penv->ppenv;
 }
 
 // Called to evaluate a line from:
@@ -2965,6 +2977,7 @@ static void	FunExecute(ENV *penv)
 	env.flags |= EX_KEEP_LAST;
 	//TokPrint(env.pCode, env.plitBase);
 	EvlExprList(&env);
+	PopEnv(&env);
 }
 
 static void FunDrop()
@@ -4097,13 +4110,13 @@ static void VarGetNam(ENV *penv)
 
 	len = *penv->pCode++;
 	pName = penv->pCode;
-	penv->pCode += len;
 	pn = GetName(len, pName);
 	if (!pn)
 		EvlError(EE_UNDEFINED_VAR);
 	if (!pn->odesc)
 		EvlError(EE_UNDEFINED_VAR);
 		
+	penv->pCode += len;
 	pd = (DESC *)WKSPTR(pn->odesc);
 	if (IS_VARIABLE(pd)) {			// Global variable
 		OperPush(TUND, 0);
@@ -4306,13 +4319,13 @@ static FUNCTION *VarGetFun(ENV *penv)
 
 	len = *penv->pCode++;
 	pName = penv->pCode;
-	penv->pCode += len;
 	pn = GetName(len, pName);
 	if (!pn)
 		EvlError(EE_UNDEFINED_VAR);
 	if (!pn->odesc)
 		EvlError(EE_UNDEFINED_VAR);
 		
+	penv->pCode += len;
 	pd = (DESC *)WKSPTR(pn->odesc);
 	if (!ISFUNCT(pd))
 		EvlError(EE_BAD_FUNCTION);
@@ -4367,7 +4380,7 @@ static void EvlFunction(FUNCTION *pfun)
 	char *base;
 	ENV env;
 	DESC temp;
-	int i, line;
+	int i;
 
 	/*
 	         Function               Stack (top on the left)
@@ -4410,11 +4423,11 @@ static void EvlFunction(FUNCTION *pfun)
 		OperPush(TUND, 0);
 	env.pvarBase = poprTop;
 
-	line = 1;
+	env.line = 1;
 	base = env.pCode;
 	do {
 		// Beginning of line
-		env.pCode = POINTER(base,OBJ_LINEOFF(&env,line));
+		env.pCode = POINTER(base,OBJ_LINEOFF(&env,env.line));
 
 		// Execute that line
 		poprTop = env.pvarBase;
@@ -4422,18 +4435,20 @@ static void EvlFunction(FUNCTION *pfun)
 
 		// Where do we go now?
 		if (*env.pCode == APL_NL) {	// Next line?
-			++line;	// Proceed to the next line
+			++env.line;	// Proceed to the next line
 		} else if (*env.pCode == APL_RIGHT_ARROW) { // Branch to other line
 			// Must have a value
 			VALIDATE_ARGS(&env,1);
-			line = EvlBranchLine(line);
+			env.line = EvlBranchLine(env.line);
 		} else
 			EvlError(EE_SYNTAX_ERROR);
-	} while (0 < line && line <= pfun->nLines);
+	} while (0 < env.line && env.line <= pfun->nLines);
 
 	// Pop local variables and arguments
 	// Leave RET on the top (if present)
 	poprTop = env.pvarBase + pfun->nLocals + pfun->nArgs;
+
+	PopEnv(&env);
 }
 
 static void VarSetInx(ENV *penv, int dims)
@@ -4499,8 +4514,6 @@ static void VarSetNam(ENV *penv, int dims)
 		pn = AddName(len, penv->pCode);
 	}
 
-	penv->pCode += len;
-
 	// If we still don't have a descriptor, get one
 	if (pn->odesc) {
 		pd = (DESC *)WKSPTR(pn->odesc);
@@ -4512,6 +4525,8 @@ static void VarSetNam(ENV *penv, int dims)
 		pn->odesc = WKSOFF(pd);
 		oldsize = 0;
 	}
+
+	penv->pCode += len;
 
 	// Indexed assignment?
 	if (dims) {
@@ -5230,10 +5245,41 @@ int *AsInt(DESC *pd, int nelem)
 
 void EvlError(int errnum)
 {
-	print_error_line("\n[EvalError] %s\n", apchEvlMsg[errnum]);
+#ifdef	HAVE_ANSI_CODES
+	print_line("\n[EvalError] ");
+	ansi_magenta();
+	print_line("%s", apchEvlMsg[errnum]);
+#else
+	print_line("\n[EvalError] %s", apchEvlMsg[errnum]);
+#endif
+
+	if (g_penv) {
+		if (errnum == EE_UNDEFINED_VAR) {
+			char *pch = g_penv->pCode;	// Points to name
+			int len = *(pch - 1);
+			print_line(": %.*s", len, pch);	// Global variable name
+		}
+
+#ifdef	HAVE_ANSI_CODES
+		ansi_normal();
+#endif
+		print_line("\n");
+
+		FUNCTION *pfun = g_penv->pFunction;
+		if (pfun) {
+			PrintFunName(pfun);
+			PrintFun(pfun, g_penv->line, g_penv->line, 0);
+		} else {	// REPL
+
+		}
+	}
+	
+	print_line("\n");
+
 	// Reset evaluation stacks
 	poprTop = poprBase + 1;
 	parrTop = parrBase;
+	g_penv = 0;
 	LONGJUMP();
 }
 

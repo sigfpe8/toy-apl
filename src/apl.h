@@ -443,17 +443,20 @@ extern void NewFun(LEXER *plex);
 extern void OpenFun(LEXER *plex, VNAME *pn);
 extern void ParseHeaderFun(FUNCTION *pfun, LEXER *plex);
 extern void PrintFun(FUNCTION *pfun, int nLine1, int nLine2, int fOff);
+extern void PrintFunName(FUNCTION *pfun);
 extern void SaveFun(FUNCTION *pfun, LEXER *plex);
 extern void TokPrint(char *base, double *litBase);
 
 // Evaluation environment
-typedef struct {
+typedef struct env {
 	FUNCTION	*pFunction;	// Function being executed
 	char		*pCode;		// Where the next instruction comes from
 	double		*plitBase;	// Base of literals table
 	offset		*plinBase;	// Base of line offsets table
 	DESC		*pvarBase;	// Base of local variable descriptors
 	uint32_t	flags;		// Execution flags
+	uint32_t	line;		// Current function line #
+	struct env	*ppenv;		// Previous environment
 } ENV;
 
 // Normally all the expressions in a diamond-separated list are evaluated,
@@ -513,12 +516,16 @@ extern int		g_print_prec;
 extern int		g_dbg_flags;
 extern double	g_comp_tol;
 extern char	*	g_blanks;
+extern ENV *	g_penv;
 
 // Debug flags (g_dbg_flags)
 #define	DEBUG_FLAG(f)		(g_dbg_flags & (f))
 #define	DBG_REPL_TOKENS		1	// Display tokenization in the REPL
 #define	DBG_DUMP_FUNCTION	2	// Dump function in 'save'
 
+#ifdef  __APPLE__
+#define HAVE_ANSI_CODES		1
+#endif
 
 // Global functions
 extern offset AplHeapAlloc(int size, offset off);
@@ -538,15 +545,20 @@ extern void InitEnvFromLexer(ENV *penv, LEXER *plex);
 extern void LoadFile(LEXER *plex, char *filename);
 extern int	MatLU(double *mat, int nr, int nc);
 extern int	MatRref(double *mat, int nr, int nc);
-extern void put_error_char(int chr);
-extern void PutDashLine(int len, char *szFmt, ...);
-extern void print_error_line(char *szFmt, ...);
-extern int	print_line(char *szFmt, ...);
+extern void	PopEnv(ENV *penv);
 extern void put_char(int chr);
+extern void print_dash_line(int len, char *szFmt, ...);
+extern int	print_line(char *szFmt, ...);
 extern int	Read_line(char *prompt, char *buffer, int buflen);
 extern void SysCommand(char *pcmd);
 extern void	*TempAlloc(int size, int nItems);
 
+#ifdef  HAVE_ANSI_CODES
+extern void	ansi_bold(void);
+extern void	ansi_magenta(void);
+extern void	ansi_normal(void);
+extern void	ansi_red(void);
+#endif
 
 #ifdef	_UNIX_
 #define	min(a,b)	((a) <= b ? (a) : (b))
@@ -568,6 +580,5 @@ extern jmp_buf jbStack[];
 extern int jbSP;
 
 #define DEL_SYMBOL			"∇"
-#define	HAVE_ANSI_CODES		1
 
 #endif	// _APL_H

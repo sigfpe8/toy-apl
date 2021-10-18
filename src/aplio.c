@@ -113,7 +113,7 @@ int print_line(char *szFmt, ...)
 	return n;
 }
 
-void PutDashLine(int linelen, char *szFmt, ...)
+void print_dash_line(int linelen, char *szFmt, ...)
 {
 	char buffer[128];
 	int len, nl;
@@ -145,28 +145,36 @@ void PutDashLine(int linelen, char *szFmt, ...)
 	va_end(args);
 }
 
-void print_error_line(char *szFmt, ...)
-{
-	va_list args;
-
-	va_start(args, szFmt);
-	vfprintf(stderr, szFmt, args);
-	va_end(args);
-}
-
 void put_char(int chr)
 {
 	putchar(chr);
-}
-
-void put_error_char(int chr)
-{
-	putc(chr, stderr);
 }
 
 void Beep(void)
 {
 	putchar(7);
 }
+
+#ifdef  HAVE_ANSI_CODES
+void ansi_normal()
+{
+	print_line("\033[m");
+}
+
+void ansi_bold()
+{
+	print_line("\033[1m");
+}
+
+void ansi_red()
+{
+	print_line("\033[31m");
+}
+
+void ansi_magenta()
+{
+	print_line("\033[35m");
+}
+#endif
 
 /* EOF */

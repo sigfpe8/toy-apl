@@ -163,7 +163,7 @@ void DumpFun(FUNCTION *pfun)
 	uchar  *pcod;
 	int		hdrsz = 40;
 
-	PutDashLine(hdrsz, "--- FUNCTION at %p ---\n", pfun);
+	print_dash_line(hdrsz, "--- FUNCTION at %p ---\n", pfun);
 	print_line("nFunSiz = %d\n", pfun->nFunSiz);
 	print_line("nHdrSiz = %d\n", pfun->nHdrSiz);
 	print_line("nSrcSiz = %d\n", pfun->nSrcSiz);
@@ -182,27 +182,27 @@ void DumpFun(FUNCTION *pfun)
 	plin = POINTER(plit,pfun->nLits * sizeof(double));
 	pcod = POINTER(pfun,pfun->oObject);
 
-	PutDashLine(hdrsz, "--- Names -\n");
+	print_dash_line(hdrsz, "--- Names -\n");
 	pch = &pfun->aNames[0];
 	while ((len = *pch)) {
 		print_line("%6.*s T=%s, I=%d\n", len, pch+3, types[pch[1]], pch[2]);
 		pch += len + 3;
 	}
 
-	PutDashLine(hdrsz, "--- Index  Literal -\n");
+	print_dash_line(hdrsz, "--- Index  Literal -\n");
 	for (i = 0; i < pfun->nLits; ++i)
 		print_line("    % 4d    % 6g\n", i, plit[i]);
 
-	PutDashLine(hdrsz, "--- Line  Source  Object -\n");
+	print_dash_line(hdrsz, "--- Line  Source  Object -\n");
 	for (i = 0; i <= pfun->nLines; ++i)
 		print_line("    % 4d    %04d    %04d\n", i, plin[i*2], plin[i*2+1]);
 
-	PutDashLine(hdrsz, "--- Source -\n");
+	print_dash_line(hdrsz, "--- Source -\n");
 	PrintFun(pfun, ALL_LINES, 0, 1);
 
-	PutDashLine(hdrsz, "-- Object -\n");
+	print_dash_line(hdrsz, "-- Object -\n");
 	TokPrint(POINTER(pfun,pfun->oObject),POINTER(pfun,pfun->nHdrSiz));
-	PutDashLine(hdrsz, "---\n");
+	print_dash_line(hdrsz, "---\n");
 }
 
 void CompileFun(FUNCTION *pfun, LEXER *plex)
@@ -355,6 +355,20 @@ void PrintFun(FUNCTION *pfun, int nLine1, int nLine2, int fOff)
 			print_line("     ");
 		print_line(g_blanks);
 		print_line(DEL_SYMBOL"\n");
+	}
+}
+
+void PrintFunName(FUNCTION *pfun)
+{
+	char *pch = pfun->aNames;
+	int len;
+
+	while ((len = *pch)) {
+		if (pch[1] == FUN_NAM) {
+			print_line("%.*s", len, pch+3);
+			break;
+		}
+		pch += len + 3;
 	}
 }
 

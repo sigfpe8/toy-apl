@@ -525,6 +525,7 @@ void LoadFile(LEXER *plex, char *file)
 			poprTop = poprBase + 1;
 			InitEnvFromLexer(&env,plex);
 			EvlExprList(&env);
+			PopEnv(&env);
 			EvlResetStacks();
 		}
 	}
