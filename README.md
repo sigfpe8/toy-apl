@@ -32,13 +32,14 @@ In both cases, after editing the function, type `∇` again to exit the editor a
 
 ### Valid editor commands
 
-Most of these commands behave as in other APL implementations, but some are different.
+Most of these commands behave as in other APL implementations, but some are different. A major difference from other editors is that toyAPL doesn't use fractional line numbers. To insert a new line before or after an existing line, use the `<` and `>` commands. The line numbers are always automatically adjusted.
 
 * [⎕]       Display all lines, insert after end
 * [N⎕]      Display from line N to end, insert after end
 * [⎕N]      Display from line 1 to line N, insert after line N
 * [M⎕N]     Display from line M to line N, insert after line N
-* [N]       Replace line N, N+1, ...
+* [N]       Replace line N
+* [!N]      Delete line N (bang!)
 * [<N]      Insert before line N
 * [>N]      Insert after line N
 

@@ -110,7 +110,7 @@ parseline:
 			} else
 				nCurLin = pfun->nLines + 1;
 		}
-		else if (plex->tokTyp == APL_DELTA) { // Delete line [∆ {line}]
+		else if (plex->tokTyp == APL_EXCL_MARK) { // Delete line [! {line}] (bang!)
 			char *pDel;
 
 			NextTok(plex);
