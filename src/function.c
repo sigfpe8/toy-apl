@@ -11,7 +11,7 @@ static void	  AddLabel(LEXER *plex, FUNCTION *pfun, int line);
 static int    CopyNames(char *pdst, char *psrc);
 static void   SwapNames(char *base, char *pfun);
 
-void NewFun(LEXER *plex)
+void NewFun(LEXER *plex, char *pfn)
 {
 	char EditBuffer[2048];
 	FUNCTION *pfun;
@@ -23,17 +23,17 @@ void NewFun(LEXER *plex)
 	pfun->oSource = sizeof(FUNCTION) + 256;
 	pfun->nFunSiz = sizeof(EditBuffer);
 	pfunBase = POINTER(pfun,pfun->oSource);
-	len = plex->psrcEnd - plex->psrcBase; // Includes EOS
-
-	InitLexer(plex, len);
-	ParseHeaderFun(pfun, plex);
+	len = plex->psrcEnd - pfn; // Skip ∇, include EOS
 
 	// Copy header from lexer to function
 	*pfunBase = len;
-	memcpy(pfunBase + 1, plex->psrcBase, len);
+	memcpy(pfunBase + 1, pfn, len);
 	pfun->nSrcSiz = len + 2;
 	pfun->nLines = 0;
 	pfun->fDirty = 1;
+
+	InitLexer(plex, plex->psrcEnd - plex->psrcBase);
+	ParseHeaderFun(pfun, plex);
 
 	// plex->tokTyp == APL_END
 	EditFun(pfun, plex);
@@ -292,18 +292,17 @@ void FPrintFun(FILE *pf, FUNCTION *pfun)
 
 	// Header
 	plin = (char *)pfun + pfun->oSource;
-	fprintf(pf, "%s\n", plin + 1);
+	fprintf(pf, "%s %s\n", g_del, plin + 1);
 	plin += *plin + 2;
 
 	// Function boddy
-	for (i = 1; i <= pfun->nLines; ++i)
-	{
-		fprintf(pf, "  %s\n", plin + 1);
+	for (i = 1; i <= pfun->nLines; ++i) {
+		fprintf(pf, "%s\n", plin + 1);
 		plin += *plin + 2;
 	}
 
 	// Footer
-	fprintf(pf, DEL_SYMBOL"\n\n");
+	fprintf(pf, "%s\n\n", g_del);
 }
 
 /*
@@ -327,7 +326,7 @@ void PrintFun(FUNCTION *pfun, int nLine1, int nLine2, int fOff)
 		// Print header (line 0)
 		if (fOff)
 			print_line("%04d ", pLin - base);
-		print_line(g_blanks);
+		print_line(g_blanks_del);
 		print_line("%s\n", pLin + 1);
 	}
 
@@ -353,8 +352,8 @@ void PrintFun(FUNCTION *pfun, int nLine1, int nLine2, int fOff)
 	if (fAll) {
 		if (fOff)
 			print_line("     ");
-		print_line(g_blanks);
-		print_line(DEL_SYMBOL"\n");
+		print_line(g_blanks_del);
+		print_line("\n");
 	}
 }
 

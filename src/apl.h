@@ -439,7 +439,7 @@ extern void DumpFun(FUNCTION *pfun);
 extern void EditFun(FUNCTION *pfun, LEXER *plex);
 extern void FPrintFun(FILE *pf, FUNCTION *pfun);
 extern void LoadFun(FILE *pf, LEXER *plex);
-extern void NewFun(LEXER *plex);
+extern void NewFun(LEXER *plex, char *pfn);
 extern void OpenFun(LEXER *plex, VNAME *pn);
 extern void ParseHeaderFun(FUNCTION *pfun, LEXER *plex);
 extern void PrintFun(FUNCTION *pfun, int nLine1, int nLine2, int fOff);
@@ -516,6 +516,8 @@ extern int		g_print_prec;
 extern int		g_dbg_flags;
 extern double	g_comp_tol;
 extern char	*	g_blanks;
+extern char	*	g_blanks_del;
+extern char *	g_del;
 extern ENV *	g_penv;
 
 // Debug flags (g_dbg_flags)
@@ -578,7 +580,5 @@ extern void	ansi_red(void);
 
 extern jmp_buf jbStack[];
 extern int jbSP;
-
-#define DEL_SYMBOL			"∇"
 
 #endif	// _APL_H

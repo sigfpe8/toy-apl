@@ -544,22 +544,24 @@ void LoadFun(FILE *pf, LEXER *plex)
 	int len;
 	int nSrcMax;
 
+	NextTok(plex);	// Skip ∇
 	pfun = (FUNCTION *)EditBuffer;
 	memset(pfun, 0, sizeof(FUNCTION));
 	pfun->oSource = sizeof(FUNCTION) + 256;
 	pfun->nFunSiz = sizeof(EditBuffer);
 	pfunBase = POINTER(pfun,pfun->oSource);
-	len = plex->psrcEnd - plex->psrcBase; // Includes EOS
-
-	InitLexer(plex, len);
-	ParseHeaderFun(pfun, plex);
+	len = plex->psrcEnd - plex->ptokBase; // Skip ∇, include EOS
 
 	// Copy header from lexer to function
 	*pfunBase = len;
-	memcpy(pfunBase + 1, plex->psrcBase, len);
+	memcpy(pfunBase + 1, plex->ptokBase, len);
 	pfun->nSrcSiz = len + 2;
 	pfun->nLines = 0;
 	pfun->fDirty = 1;
+
+	InitLexer(plex, plex->psrcEnd - plex->psrcBase);
+	ParseHeaderFun(pfun, plex);
+
 	nSrcMax = pfun->nFunSiz - pfun->oSource;
 	pIns = pfunBase + pfun->nSrcSiz;
 

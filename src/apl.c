@@ -50,6 +50,8 @@ double g_comp_tol = 1e-14;
 ENV *g_penv;
 
 char *g_blanks = "      ";
+char *g_blanks_del = "    ∇ ";
+char *g_del = "∇";
 
 static jmp_buf jbDirMode;
 static jmp_buf jbTokExpr;
@@ -212,6 +214,7 @@ static void REPL(LEXER *plex)
 				if (plex->tokTyp != APL_VARNAM)
 					LexError(plex, LE_BAD_DEL_COMMAND);
 				pn = GetName(plex->tokLen, plex->ptokBase);
+				char *pfn = plex->ptokBase;
 				NextTok(plex);
 				if (plex->tokTyp == APL_LEFT_BRACKET) {	// Edit command
 					if (!pn || !IS_FUNCTION(pn) || !pn->odesc)
@@ -228,7 +231,7 @@ static void REPL(LEXER *plex)
 						} else					// There's a variable with this name
 							LexError(plex, LE_NAME_CONFLICT);
 					} else
-						NewFun(plex);
+						NewFun(plex, pfn);
 				}
 			} else {
 				// Tokenize expression
