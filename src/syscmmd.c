@@ -3,6 +3,10 @@
 
 #include <string.h>
 #include <ctype.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/uio.h>
+#include <unistd.h>
 
 #include "apl.h"
 #include "error.h"
@@ -157,7 +161,7 @@ static Command *GetCmd(char *szName)
 
 int Clear(int argc, char *argv[])
 {
-	InitWorkspace(0);
+	InitWorkspace(pwksBase, 1);
 	print_line("Clear WS\n");
 
 	return OK;
@@ -292,17 +296,89 @@ int Help(int argc, char *argv[])
 	return OK;
 }
 
+int IsWSCompatible(APLWKS *pws) {
+	if (pws->magic != APL_MAGIC) {
+		print_line("Invalid WS file\n");
+		return FALSE;
+	}
+	return TRUE;
+}
+
+int OpenWS(char *wsid, int flag)
+{
+	int fd;
+	int n;
+	char fname[WSIDSZ + 6];		// wsid.aplws
+
+	n = strlcpy(fname, wsid, WSIDSZ);
+
+	if (n >= WSIDSZ || strlcat(fname, ".aplws", sizeof(fname)) >= sizeof(fname)) {
+		print_line("WS name is too long: %s\n", wsid);
+		return -1;
+	}
+
+	if ((fd = open(fname, flag, 0660)) < 0) {
+		print_line("Could not open WS file %s\n", fname);
+		return -1;
+	}
+
+	return fd;
+}
+
 int Load(int argc, char *argv[])
 {
 	int i;
+	int fd;
+	char *wsid;
 	LEXER lex;
+	APLWKS ws;
+	APLWKS *pws;
 
-	if (argc == 1) {
-		print_line("Load <file.apl>\n");
+	// Load workspace: )LOAD {ws}
+	// If present, ws does not contain any file extension (e.g. ".aplws")
+	if (argc == 1 || (argc == 2 && !strchr(argv[1], '.'))) {
+		wsid = argc == 1 ? pwksBase->wsid : argv[1];
+		if ((fd = OpenWS(wsid, O_RDONLY)) < 0)
+			return ERROR;
+		// Initially read only the header
+		if (read(fd, &ws, sizeof(ws)) != sizeof(ws)) {
+			print_line("Error reading header from WS %s.\n", wsid);
+			close(fd);
+			return ERROR;
+		}
+		// Check compatibility with the current executable
+		if (!IsWSCompatible(&ws)) {
+			close(fd);
+			return ERROR;
+		}
+		if (!(pws = malloc(ws.wkssz))) {
+			print_line("Could not allocate new WS\n");
+			close(fd);
+			return ERROR;
+		}
+		// Rewind
+		lseek(fd, 0, SEEK_SET);
+		// Now read the whole WS
+		if (read(fd, pws, ws.wkssz) != ws.wkssz) {
+			print_line("Error reading WS %s.\n", wsid);
+			close(fd);
+			return ERROR;
+		}
+		close(fd);
+
+		// Release old WS
+		free(pwksBase);
+	
+		// Establish new WS
+		pwksBase = pws;
+		GetAPLWKS(pws);
+		print_line("Succesfully loaded WS %s\n.", wsid);
+
 		return OK;
 	}
 
-	CreateLexer(&lex, (char *)pgblBase + gblarrsz, REPLBUFSIZ, 0, 0);
+	// Load source files: )LOAD file.apl ...
+	CreateLexer(&lex, (char *)pdesBase + gblarrsz, REPLBUFSIZ, 0, 0);
 
 	for (i = 1; i < argc; ++i)
 		LoadFile(&lex, argv[i]);
@@ -365,13 +441,13 @@ int Memory(int argc, char *argv[])
 
 	// Global heap and operand stack grow toward each other
 	// Same size and free space
-	used = (char *)(poprBase+1) - (char *)poprTop;
+	used = (char *)pdesBase - (char *)poprTop;
 	tused += used;
 	printf("Oper stack   %10d  %10d  %10d\n", (int)(size/scale), (int)(used/scale), (int)(free/scale));
 
 	// Global descriptor table and temp array stack grow toward each other
 	size = (int)gblarrsz;
-	used = (char *)pgblTop  - (char *)pgblBase;
+	used = (char *)pgblTop  - (char *)pdesBase;
 	free = (char *)parrTop - (char *)pgblTop;
 	tsize += size;
 	tused += used;
@@ -417,16 +493,30 @@ int Origin(int argc, char *argv[])
 int Save(int argc, char **argv)
 {
 	FILE *pf;
+	char *wsid;
 	VNAME *pn;
 	DESC *pd;
 	FUNCTION *pfun;
+	int fd;
 	int i;
 
+	// Save workspace: )SAVE {ws}
 	if (argc < 3) {
-		print_line(")SAVE fun1 fun2 ... file.apl\n");
-		return ERROR;
+		wsid = argc == 1 ? pwksBase->wsid : argv[1];
+		if ((fd = OpenWS(wsid, O_WRONLY|O_CREAT|O_TRUNC)) < 0)
+			return ERROR;
+		SetAPLWKS(pwksBase);
+		if (write(fd, pwksBase, pwksBase->wkssz) != pwksBase->wkssz) {
+			close(fd);
+			print_line("Error saving WS to %s.\n", wsid);
+			return ERROR;
+		}
+		close(fd);
+		print_line("Successfully saved WS to %s.\n", wsid);
+		return OK;
 	}
 
+	// Save individual functions: )SAVE fun1 fun2 ... file.apl
 	if ((pf = fopen(argv[argc-1],"w")) == NULL) {
 		print_line("Error opening %s for writing.", argv[argc-1]);
 		return ERROR;
@@ -522,7 +612,7 @@ void LoadFile(LEXER *plex, char *file)
 			if (!TokExpr(plex))
 				continue;
 			// Evaluate expression
-			poprTop = poprBase + 1;
+			poprTop = pdesBase;
 			InitEnvFromLexer(&env,plex);
 			EvlExprList(&env);
 			PopEnv(&env);

@@ -214,39 +214,44 @@ int NextDropIndex(DROPINDEX *pi, int rank, int *psrc_ind);
 /*
 ** The Workspace
 
-+----------+
-| Header   |<-- pwksBase
-+----------+
-| Name     |<-- pnamBase
-| table    |<-- pnamTop
-|          |
-+----------+
-| Heap     |<-- phepBase
-|          |
-|          |
-+----------+
-| Free1    |<-- phepTop
-|          |
-+----------+
-| Operand  |<-- poprTop
-| stack    |
-|          |<-- poprBase
-+----------+
-| Global   |<-- pgblBase
-| desc.    |
-|          |<-- pgblTop
-+----------+
-| Free2    |
-+----------+
-| Array    |<-- parrTop
-| stack    |
-|          |<-- parrBase
-+----------+
+                +----------+
+    pwksBase -->| Header   | \
+                +----------+  |
+    pnamBase -->| Name     |   > namsz         
+     pnamTop -->| table    |  |
+                |          | /
+                +----------+
+    phepBase -->| Heap     | \
+                |          |  |
+                |          |  |
+                +----------+  |
+     phepTop -->| Free1    |   > hepoprsz
+                |          |  |
+                +----------+  |
+     poprTop -->| Operand  |  |
+                | stack    |  |
+                |          | /
+                +----------+
+	pdesBase -->|          | \
+                | Global   |  |
+                | desc.    |  |
+     pgblTop -->|          |  |
+                +----------+  |
+                | Free2    |   > gblarrsz
+                +----------+  |
+                | Array    |  |
+     parrTop -->| stack    |  |
+                |          | /
+                +----------+
+	parrBase -->| REPL     | \
+	            | buffer   |  > REPLBUFSIZ
+				|          | /
+				+----------+
 
 STACKS (Operand, Array, Frame)
 
   All stacks grow downwards.
-  pxxxBase points to the first usable element (highest address).
+  pxxxBase points past the first usable element (highest address).
   pxxxTop  points to the last pushed element (lowest address).
   To push an element on a stack you pre-decrement its top pointer:
 	*--pxxxTop = elem;
@@ -261,28 +266,36 @@ STACKS (Operand, Array, Frame)
 
 #define	HASHSZ	32	/* Must be a power of 2 */
 #define WSIDSZ	32
-#define	MAJORV	0
-#define	MINORV	0
-#define	LEVELV	2
+
+#define	APL_MAGIC	0x41504C20
 
 typedef struct {
 	uint	magic;		/* Magic number = 'APL ' */
-	uint	hdrsz;		/* Header size */
-	uint	namsz;		/* Name table size */
-	uint	hepsz;		/* Heap size */
-	uint	fr1sz;		/* Free area 1 size */
-	uint	oprsz;		/* Operand stack size */
-	uint	gblsz;		/* Global descriptors size */
-	uint	fr2sz;		/* Free area 2 size */
-	uint	arrsz;		/* Array stack size */
-	uint	fr3sz;		/* Free area 3 size */
-	uint	frmsz;		/* Frame stack size */
-	uint	wkssz;		/* Workspace size */
-	uint8_t	origin;		/* System origin (0/1) */
+
 	uint8_t	majorv;		/* Major version # */
 	uint8_t	minorv;		/* Minor version # */
-	uint8_t	levelv;		/* Level version # */
-	char	wsid[WSIDSZ]; /* Workspace ID (name) */
+	uint8_t	patchv;		/* Patch version # */
+	uint8_t	pad1;
+
+	size_t	hdrsz;		/* Header size */
+	size_t	wkssz;		/* Workspace size */
+	size_t	namsz;		/* Name table size */
+	size_t	hepoprsz;	/* Heap + operand stack size */
+	size_t	gblarrsz;	/* Array stack size */
+
+	offset	namoff;		/* Offset for pnamTop (+) */
+	offset	hepoff;		/* Offset for phepTop (+) */
+	offset	oproff;		/* Offset for poprTop (-) */
+	offset	gbloff;		/* Offset for pgblTop (+) */
+	offset  arroff;		/* Offset for parrTop (-) */
+
+	offset	heplen;		/* Free heap cell header */
+	offset	hepfol;		/* Free heap cell header */
+
+	uint8_t	origin;		/* System origin (0/1) */
+	uint8_t	prprec;		/* Print precision */
+
+	char	wsid[WSIDSZ]; /* Workspace ID (0-terminated) */
 	offset	hashtab[HASHSZ];	/* Variable/Function Hash table */
 } APLWKS;
 
@@ -290,7 +303,9 @@ typedef struct {
 #define	WKSOFF(ptr)	OFFSET(pwksBase,ptr)
 
 extern APLWKS *pwksBase;
-extern void InitWorkspace(int first_time);
+extern void InitWorkspace(APLWKS *pws, int preserve);
+extern void SetAPLWKS(APLWKS *pws);
+extern void GetAPLWKS(APLWKS *pws);
 
 // Name table
 typedef struct {
@@ -328,14 +343,13 @@ extern HEAPCELL	*phepTop;
 extern HEAPCELL	hepFree;
 
 // Operand stack
-extern DESC   *poprBase;
 extern DESC   *poprTop;
 #define	NUM_VALS(e)			((e)->pvarBase - poprTop)
 #define	VALIDATE_ARGS(e,n)	if (NUM_VALS(e) < (n)) EvlError(EE_NO_VALUE)
 
 // Global descriptors
 extern size_t  gblarrsz;	// Size of globals descriptors + array stack
-extern DESC   *pgblBase;
+extern DESC   *pdesBase;	// Also the base for the operand stack
 extern DESC   *pgblTop;
 extern DESC   *pgblFree;
 

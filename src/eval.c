@@ -115,7 +115,7 @@ void InitEnvFromLexer(ENV *penv, LEXER *plex)
 	penv->pCode = plex->pCode + 1;
 	penv->plitBase = plex->plitBase;
 	penv->plinBase = plex->plinBase;
-	penv->pvarBase = poprBase + 1;	// Used by NUM_VALS()
+	penv->pvarBase = pdesBase;	// Used by NUM_VALS()
 	penv->flags = 0;
 	penv->ppenv = g_penv;	// Save previous environment
 	g_penv = penv;			// Set new one
@@ -169,7 +169,7 @@ void EvlExprList(ENV *penv)
 // Reset evaluation stacks
 void EvlResetStacks(void)
 {
-	poprTop = poprBase + 1;
+	poprTop = pdesBase;
 	parrTop = parrBase;
 }
 
@@ -5277,7 +5277,7 @@ void EvlError(int errnum)
 	print_line("\n");
 
 	// Reset evaluation stacks
-	poprTop = poprBase + 1;
+	poprTop = pdesBase;
 	parrTop = parrBase;
 	g_penv = 0;
 	LONGJUMP();

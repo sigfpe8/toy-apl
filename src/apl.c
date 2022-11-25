@@ -27,12 +27,11 @@ HEAPCELL *	phepTop;
 HEAPCELL	hepFree;	// Free list
 
 /* Operand stack */
-DESC   *poprBase;
-DESC   *poprTop;
+DESC *		poprTop;
 
 /* Global descriptors */
 size_t		gblarrsz;	// Size of globals descriptors + array stack
-DESC *		pgblBase;
+DESC *		pdesBase;	// Also the base for the operand stack
 DESC *		pgblTop;
 DESC *		pgblFree;
 
@@ -67,6 +66,11 @@ int main(int argc, char *argv[])
 	LEXER lex;
 	size_t rest;
 
+	if (sizeof(DESC) != DESCSZ) {
+		print_line("sizeof(DESC)=%d, expected %d\n", (int)sizeof(DESC), DESCSZ);
+		exit(1);
+	}
+
 	// At this point, all sizes in KB
 	wkssz = DEFWKSSZ;
 	rest = wkssz - (REPLBUFSIZ/1024);
@@ -88,24 +92,19 @@ int main(int argc, char *argv[])
 	hepoprsz *= 1024;
 	gblarrsz *= 1024;
 
-	if (sizeof(DESC) != DESCSZ) {
-		print_line("sizeof(DESC)=%d, expected %d\n", (int)sizeof(DESC), DESCSZ);
-		exit(1);
-	}
-
 	pwksBase = (APLWKS *)malloc(wkssz);
 	if (pwksBase == NULL) {
 		print_line("Not enough memory\n");
 		exit(1);
 	}
 
-	InitWorkspace(1);
+	InitWorkspace(pwksBase, 0);
 	token_init();
 	// The lexer buffer is at the end of the workspace and does not need to
 	// be saved to disk. It needs to be inside the workspace (and cannot be,
 	// for example, a local array in a function) because it contains the
 	// literals table, which is accessed from the pcode via workspace offsets.
-	CreateLexer(&lex, (char *)pgblBase + gblarrsz, REPLBUFSIZ, 0, 0);
+	CreateLexer(&lex, (char *)pdesBase + gblarrsz, REPLBUFSIZ, 0, 0);
 	INITJUMP();
 
 	print_line("toyAPL Version %d.%d.%d\n", APL_VER_MAJOR, APL_VER_MINOR, APL_VER_PATCH);
@@ -121,54 +120,120 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
-void InitWorkspace(int first_time)
+/*
+   Struct APLWKS has been filled in, either by reading it in from a saved
+   file or by initializing it to an empty state. Here we just instantiate
+   all the run-time pointers from the workspace offsets.
+*/
+void GetAPLWKS(APLWKS *pws)
 {
-	int i;
-	offset *po;
-
-	/* Header fields */
-	pwksBase->magic = 0x41504C20; /* 'APL ' */
-	pwksBase->hdrsz = sizeof(APLWKS);
-	pwksBase->namsz = namsz - sizeof(APLWKS);
-
-	pwksBase->wkssz = wkssz;
-	pwksBase->origin = g_origin;
-	pwksBase->majorv = MAJORV;
-	pwksBase->minorv = MINORV;
-
-	/* Hash table */
-	memset(pwksBase->hashtab,0,sizeof(pwksBase->hashtab));
+	g_origin = pws->origin;
+	g_print_prec = pws->prprec;
 
 	/* Header + name table */
-	pnamBase = (char *)pwksBase + sizeof(APLWKS);
-	pnamTop = pnamBase;
-	//printf("pnamBase = %p\n", pnamBase);
+	pnamBase = (char *)POINTER(pws, pws->hdrsz);
+	pnamTop = (char *)POINTER(pnamBase, pws->namoff);
 
 	/* Heap + operand stack */
-	phepBase = (HEAPCELL *)((char *)pwksBase + namsz);
-	phepTop = phepBase;
-	hepFree.length = 0;
-	hepFree.follow = 0;
-	//printf("phepTop  = %p\n", phepTop);
+	phepBase = (HEAPCELL *)POINTER(pws, pws->namsz);
+	phepTop = (HEAPCELL *)POINTER(phepBase, pws->hepoff);
+	hepFree.length = pws->heplen;
+	hepFree.follow = pws->hepfol;
 
-	poprBase = (DESC *)((char *)phepBase + hepoprsz) - 1;
-	poprTop = poprBase + 1;
-	//printf("poprBase = %p\n", poprBase);
-	//printf("poprTop  = %p\n", poprTop);
+	pdesBase = (DESC *)POINTER(phepBase, pws->hepoprsz);
+	poprTop = (DESC *)((char *)pdesBase - (offset)pws->oproff);
 
 	/* Global descriptors + array stack */
-	pgblBase = poprBase + 1;
-	pgblTop = pgblBase;
-	//printf("pgblTop  = %p\n", pgblTop);
+	pgblTop = (DESC *)POINTER(pdesBase, pws->gbloff);
 
-	parrBase = (char *)pgblBase + gblarrsz;
-	parrTop = parrBase;
-	//printf("parrBase = %p\n", parrBase);
-	//printf("parrTop  = %p\n", parrTop);
+	parrBase = (char *)POINTER(pdesBase, gblarrsz);
+	parrTop = parrBase - pws->arroff;
+}
 
-	// Default WS name (only the first time)
-	if (first_time)
-		strcpy(pwksBase->wsid, "toyAPL WS");
+void SetAPLWKS(APLWKS *pws)
+{
+	pws->origin = g_origin;
+	pws->prprec = g_print_prec;
+
+	/* Header + name table */
+	pws->namoff = OFFSET(pnamBase, pnamTop);
+	pws->hepoff = OFFSET(phepBase, phepTop);
+	pws->heplen = hepFree.length;
+	pws->hepfol = hepFree.follow;
+	pws->oproff = (char *)pdesBase - (char *)poprTop;
+
+	/* Global descriptors + array stack */
+	pws->gbloff = OFFSET(pdesBase, pgblTop);
+	pws->arroff = parrBase - parrTop;
+}
+
+// Initialize the WS including user settings (origin, etc.)
+void NewWorkspace(APLWKS *pws)
+{
+	memset(pws, 0, sizeof(APLWKS));
+
+	pws->magic = APL_MAGIC; /* 'APL ' */
+
+	pws->majorv = APL_VER_MAJOR;
+	pws->minorv = APL_VER_MINOR;
+	pws->patchv = APL_VER_PATCH;
+
+	pws->hdrsz = sizeof(APLWKS);
+	pws->wkssz = wkssz;
+	pws->namsz = namsz;
+	pws->hepoprsz = hepoprsz;
+	pws->gblarrsz = gblarrsz;
+
+	pws->origin = 1;
+	pws->prprec = 10;
+
+	strcpy(pwksBase->wsid, "toyAPL-WS");
+}
+
+// Initialize the WS preserving user settings (origin, etc.)
+void ClearWorkspace(APLWKS *pws)
+{
+	char wsid[WSIDSZ];
+	int origin;
+	int prprec;
+
+	// Save user settings
+	origin = pws->origin;
+	prprec = pws->prprec;
+	strcpy_s(wsid, WSIDSZ, pws->wsid);
+
+	// Initialize everything
+	NewWorkspace(pws);
+
+	// Restore user settings
+	pws->origin = origin;
+	pws->prprec = prprec;
+	strcpy_s(pws->wsid, WSIDSZ, wsid);
+}
+
+void InitWorkspace(APLWKS *pws, int preserve)
+{
+	char wsid[WSIDSZ];
+	int origin;
+	int prprec;
+
+	// Preserve user settings?
+	if (preserve) {
+		origin = pws->origin;
+		prprec = pws->prprec;
+		strcpy_s(wsid, WSIDSZ, pws->wsid);
+	}
+
+	// Initialize everything
+	NewWorkspace(pws);
+	GetAPLWKS(pws);
+
+	// Restore user settings
+	if (preserve) {
+		pws->origin = origin;
+		pws->prprec = prprec;
+		strcpy_s(pws->wsid, WSIDSZ, wsid);
+	}
 }
 
 static void REPL(LEXER *plex)
