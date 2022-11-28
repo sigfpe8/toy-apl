@@ -3987,9 +3987,27 @@ static void Scan(int fun, int axis)
 	int stride = size[axis];
 	int inner  = shape[axis] * size[axis];
 	double accum;
+	int left_assoc;
 
-	if (fun != APL_MINUS && fun != APL_DIV && fun != APL_STILE) {
-		// Associative functions (scan left->right once)
+	switch (fun) {
+	case APL_UP_STILE:
+	case APL_DOWN_STILE:
+	case APL_PLUS:
+	case APL_TIMES:
+	case APL_AND:
+	case APL_OR:
+	case APL_NAND:
+	case APL_NOR:
+		left_assoc = 1;
+		break;
+	default:
+		left_assoc = 0;
+		break;
+	}
+
+
+	if (left_assoc) {
+		// Left-associative functions (scan left->right once)
 		for (int i = 0; i < outer[axis]; ++i) {
 			for (int j = 0; j < size[axis]; ++j) {
 				accum = *(psrc + j);
