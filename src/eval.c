@@ -44,6 +44,7 @@ static void		FunCompress(int axis);
 static void		FunDeal(void);
 static void		FunDecode(void);
 static void		FunDrop(void);
+static void		FunDyadicTranspose(void);
 static void		FunEncode(void);
 static void		FunExecute(ENV *penv);
 static void		FunExpand(int axis);
@@ -1182,6 +1183,9 @@ static void EvlDyadicFun(int fun, int axis, int axis_type)
 		return;
 	case APL_QUESTION_MARK:	// A ? B
 		FunDeal();
+		return;
+	case APL_TRANSPOSE:		// V ⍉ A
+		FunDyadicTranspose();
 		return;
 	case APL_SLASH:			// A /[axis] B  Default axis = last
 	case APL_SLASH_BAR:		// A ⌿[axis] B  Default axis = first
@@ -3237,6 +3241,139 @@ get_index:
 		ind += index[i] * size[i];
 
 	return ind;
+}
+
+static int NextDyadicTransposeIndex(int index[], int dst_shape[], int src_size[], int perm[], int src_rank, int dst_rank)
+{
+	int ind;
+
+	for (int j = dst_rank - 1; j >= 0; --j) {
+		if (++index[j] < dst_shape[j])
+			goto get_index;
+
+		// Reset this level and backtrack
+		index[j] = 0;
+	}
+
+	return -1;
+get_index:
+	ind = 0;
+	for (int i = src_rank - 1; i >= 0; --i)
+		ind += index[perm[i]] * src_size[i];
+
+	return ind;
+}
+
+static void FunDyadicTranspose(void)
+{
+	int dst_shape[MAXDIM];	// Shape of result
+	int src_size[MAXDIM];	// Size of source A
+	int index[MAXDIM];		// Argument index
+	int *perm;				// V elements as ints (usually a permutation)
+	int per_nelem;			// # of elements in V
+	int src_nelem;			// # of elements in A
+	int dst_nelem;			// # of elements in result
+	int dst_rank = 0;
+	int src_rank;			// RANK(A)
+	int	is_num;				// 1 if A is numeric, 0 if character
+	int ind;
+	uint32_t aset = 0;		// Set of V elements
+
+	// V ⍉ A
+	if (RANK(poprTop) != 1)	// Left argument must be a numeric vector
+		EvlError(EE_RANK);
+	if (!ISNUMBER(poprTop))
+		EvlError(EE_DOMAIN);
+	per_nelem = NumElem(poprTop);
+	if (per_nelem < 1 || per_nelem > MAXDIM)
+		EvlError(EE_LENGTH);
+
+	perm = AsInt(poprTop, per_nelem);
+
+	POP(poprTop);
+
+	is_num = ISNUMBER(poprTop);
+
+	if (per_nelem != (src_rank = RANK(poprTop)))
+		EvlError(EE_LENGTH);
+
+	src_nelem = 1;
+	for (int i = src_rank - 1; i >= 0; --i) {
+		int n = SHAPE(poprTop)[i];
+		src_size[i] = src_nelem;
+		src_nelem *= n;
+	}
+
+	// Set result
+
+	// Make sure we can handle axes as bit numbers
+	assert(MAXDIM <= sizeof(aset)*8);
+
+	// Validate list of axes
+	for (int i = 0; i < per_nelem; ++i) {
+		int axis = perm[i] - g_origin;	// 0-based axis
+		if (axis < 0 || axis >= src_rank)
+			EvlError(EE_RANK);
+		perm[i] = axis;
+		if (axis > dst_rank)
+			dst_rank = axis;
+		aset |= (1 << axis);
+	}
+	// See if there are holes in the list
+	while (aset) {
+		if (!(aset & 1))
+			EvlError(EE_RANK);
+		aset >>= 1;
+	}
+	++dst_rank;	// New rank is highest axis (1-based)
+
+	// Determine new shape
+	dst_nelem = 1;
+	for (int i = 0; i < dst_rank; ++i) {		// Fill out dst_shape[]
+		int n = MAXIND;
+		for (int j = 0; j < per_nelem; ++j) {	// Scan perm[]
+			if (perm[j] == i && SHAPE(poprTop)[j] < n)
+				n = SHAPE(poprTop)[j];
+		}
+		dst_shape[i] = n;
+		dst_nelem *= n;
+	}
+
+	// Nothing to transpose in null arrays
+	if (!src_nelem || !dst_nelem)
+		return;
+
+	if (is_num) {		// Numbers
+		double *pdst;
+		double *psrc;
+		psrc = (double *)VPTR(poprTop);
+		pdst = TempAlloc(sizeof(double), dst_nelem);
+		VOFF(poprTop) = WKSOFF(pdst);
+
+		ind = CreateTransposeIndex(index, dst_rank);
+
+		while (ind >= 0) {
+			*pdst++ = *(psrc + ind);
+			ind = NextDyadicTransposeIndex(index, dst_shape, src_size, perm, src_rank, dst_rank);
+		}
+	} else {			// Characters
+		char *pdst;
+		char *psrc;
+		psrc = (char *)VPTR(poprTop);
+		pdst = TempAlloc(sizeof(char), dst_nelem);
+		VOFF(poprTop) = WKSOFF(pdst);
+
+		ind = CreateTransposeIndex(index, dst_rank);
+
+		while (ind >= 0) {
+			*pdst++ = *(psrc + ind);
+			ind = NextDyadicTransposeIndex(index, dst_shape, src_size, perm, src_rank, dst_rank);
+		}
+	}
+
+	RANK(poprTop) = dst_rank;
+	for (int i = 0; i < dst_rank; ++i)
+		SHAPE(poprTop)[i] = dst_shape[i];
 }
 
 static void FunTranspose(void)
