@@ -37,6 +37,19 @@ e←1+∧/,x=z
 
 ⎕←'Testing the dyadic transpose function'
 a←2 3 4⍴⎕A
+
+⍞←'Testing 1⍉1 3 5 7 9'
+z←1⍉1 3 5 7 9
+x←1 3 5 7 9
+e←1+∧/,x=z
+⎕←msg[e;]
+
+⍞←'Testing (,1)⍉0 2 4 6 8'
+z←(,1)⍉0 2 4 6 8
+x←0 2 4 6 8
+e←1+∧/,x=z
+⎕←msg[e;]
+
 ⍞←'Testing 3 1 2⍉a'
 z←3 1 2⍉a
 x←3 4 2⍴'AMBNCODPEQFRGSHTIUJVKWLX'
