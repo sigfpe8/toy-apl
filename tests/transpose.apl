@@ -1,7 +1,47 @@
-⎕←'Testing the dyadic transpose function'
 msg←2 6⍴' Error Ok   '
 m←2 3 4⍴⍳24
 t←(100×⍳2)∘.+(10×⍳4)∘.+(⍳3)
+a←4 6⍴⎕A
+
+⎕←'Testing the monadic transpose function'
+⍞←'Testing ⍉a'
+z←⍉a
+x←6 4⍴'AGMSBHNTCIOUDJPVEKQWFLRX'
+e←1+∧/,x=z
+⎕←msg[e;]
+
+⍞←'Testing ⍉m'
+z←⍉m
+x←4 3 2⍴1 13 5 17 9 21 2 14 6 18 10 22 3 15 7 19 11 23 4 16 8 20 12 24
+e←1+∧/,x=z
+⎕←msg[e;]
+
+⍞←'Testing ⍉⍉m'
+z←⍉⍉m
+x←m
+e←1+∧/,x=z
+⎕←msg[e;]
+
+⍞←'Testing ⍉t'
+z←⍉t
+x←3 4 2⍴111 211 121 221 131 231 141 241 112 212 122 222 132 232 142 242 113 213 123 223 133 233 143 243
+e←1+∧/,x=z
+⎕←msg[e;]
+
+⍞←'Testing ⍉⍉t'
+z←⍉⍉t
+x←t
+e←1+∧/,x=z
+⎕←msg[e;]
+
+
+⎕←'Testing the dyadic transpose function'
+a←2 3 4⍴⎕A
+⍞←'Testing 3 1 2⍉a'
+z←3 1 2⍉a
+x←3 4 2⍴'AMBNCODPEQFRGSHTIUJVKWLX'
+e←1+∧/,x=z
+⎕←msg[e;]
 
 ⍞←'Testing 1 2 3⍉t'
 z←1 2 3⍉t
