@@ -3280,7 +3280,7 @@ static void FunDyadicTranspose(void)
 	uint32_t aset = 0;		// Set of V elements
 
 	// V ⍉ A
-	if (RANK(poprTop) != 1)	// Left argument must be a numeric vector
+	if (RANK(poprTop) > 1)	// Left argument must be a numeric vector
 		EvlError(EE_RANK);
 	if (!ISNUMBER(poprTop))
 		EvlError(EE_DOMAIN);
@@ -3339,8 +3339,8 @@ static void FunDyadicTranspose(void)
 		dst_nelem *= n;
 	}
 
-	// Nothing to transpose in null arrays
-	if (!src_nelem || !dst_nelem)
+	// 1⍉V returns V unchanged
+	if (src_rank == 1)
 		return;
 
 	if (is_num) {		// Numbers
