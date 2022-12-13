@@ -372,7 +372,7 @@ int Load(int argc, char *argv[])
 		// Establish new WS
 		pwksBase = pws;
 		GetAPLWKS(pws);
-		print_line("Succesfully loaded WS %s\n.", wsid);
+		print_line("%s saved %s", wsid, ctime(&pws->savedat));
 
 		return OK;
 	}
@@ -506,6 +506,7 @@ int Save(int argc, char **argv)
 		if ((fd = OpenWS(wsid, O_WRONLY|O_CREAT|O_TRUNC)) < 0)
 			return ERROR;
 		SetAPLWKS(pwksBase);
+		time(&pwksBase->savedat);	// Time WS was saved
 		if (write(fd, pwksBase, pwksBase->wkssz) != pwksBase->wkssz) {
 			close(fd);
 			print_line("Error saving WS to %s.\n", wsid);

@@ -66,6 +66,11 @@ int main(int argc, char *argv[])
 	LEXER lex;
 	size_t rest;
 
+	if (sizeof(time_t) != 8) {
+		print_line("This build does not support 64-bit time_t\n");
+		exit(1); 
+	}
+
 	if (sizeof(DESC) != DESCSZ) {
 		print_line("sizeof(DESC)=%d, expected %d\n", (int)sizeof(DESC), DESCSZ);
 		exit(1);

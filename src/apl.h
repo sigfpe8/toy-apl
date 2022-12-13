@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <setjmp.h>
+#include <time.h>
 
 // Version
 #define	APL_VER_MAJOR	0
@@ -282,6 +283,7 @@ typedef struct {
 	size_t	namsz;		/* Name table size */
 	size_t	hepoprsz;	/* Heap + operand stack size */
 	size_t	gblarrsz;	/* Array stack size */
+	time_t	savedat;	/* Time WS was saved */
 
 	offset	namoff;		/* Offset for pnamTop (+) */
 	offset	hepoff;		/* Offset for phepTop (+) */
